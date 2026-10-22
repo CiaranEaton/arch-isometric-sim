@@ -8,13 +8,10 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
   standalone: true,
   imports: [CommonModule, IsometricCanvasComponent, ArchitectureWizardComponent],
   template: `
-    <main class="min-h-screen bg-[#010b06] text-slate-100 flex flex-col items-center justify-start p-6 relative overflow-x-hidden font-sans gap-8">
+    <main class="min-h-screen text-slate-100 flex flex-col items-center justify-start p-6 relative overflow-x-hidden font-sans gap-8">
       
-      <!-- CANVAS 3D MAESTRO: Fondo durante el wizard, componente embebido en vista final -->
-      <div [ngClass]="{
-        'fixed inset-0 z-0 pointer-events-none opacity-40 transition-all duration-1000': !isBuilt,
-        'absolute inset-0 w-full h-full': isBuilt
-      }">
+      <!-- CANVAS 3D MAESTRO: Pantalla completa fija en el fondo siempre -->
+      <div class="fixed inset-0 z-0 w-full h-full pointer-events-none transition-all duration-1000" [ngClass]="{'opacity-35': !isBuilt, 'opacity-100': isBuilt}">
         <app-isometric-canvas 
           [architecture]="currentSelection" 
           [currentStep]="activeWizardStep"
@@ -22,11 +19,11 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </app-isometric-canvas>
       </div>
 
-      <!-- Efectos lumínicos ambientales -->
+      <!-- Efectos lumínicos ambientales de fondo -->
       <div class="fixed -top-40 -left-40 w-96 h-96 bg-emerald-500/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
       <div class="fixed -bottom-40 -right-40 w-96 h-96 bg-cyan-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
 
-      <!-- Header principal -->
+      <!-- Header principal compacto -->
       <header class="relative z-10 max-w-5xl w-full bg-slate-950/85 backdrop-blur-2xl border border-emerald-500/40 rounded-2xl p-6 shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-500">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-3">
@@ -45,7 +42,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </p>
       </header>
 
-      <!-- MODO WIZARD -->
+      <!-- MODO WIZARD (Con transiciones suaves) -->
       <section *ngIf="!isBuilt" class="relative z-10 max-w-5xl w-full transition-all duration-700 transform">
         <app-architecture-wizard 
           (stepChange)="onStepChange($event)"
@@ -54,9 +51,10 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </app-architecture-wizard>
       </section>
 
-      <!-- MODO VISTA TÁCTICA FINAL -->
-      <section *ngIf="isBuilt" class="relative z-10 max-w-7xl w-full flex flex-col gap-6 transition-all duration-1000 ease-in-out transform scale-100 opacity-100 animate-fade-in">
+      <!-- MODO VISTA TÁCTICA FINAL (Paneles 3D Flotantes a los lados, dejando el centro libre) -->
+      <section *ngIf="isBuilt" class="relative z-10 max-w-7xl w-full flex flex-col gap-6 transition-all duration-1000 ease-in-out animate-fade-in" style="perspective: 1400px;">
         
+        <!-- Barra de Estado Superior -->
         <div class="bg-slate-950/90 border border-emerald-500/50 p-4 rounded-2xl flex flex-wrap items-center justify-between font-mono text-xs shadow-2xl backdrop-blur-xl">
           <div class="flex items-center gap-3">
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -67,37 +65,38 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
           </button>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-center">
+        <!-- Layout con HUDs Laterales en 3D (Rotados hacia adentro estilo consola) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center pt-4">
           
-          <div class="flex flex-col gap-4">
-            <div class="bg-slate-950/90 backdrop-blur-xl border border-emerald-500/30 p-4 rounded-2xl shadow-xl">
+          <!-- Columna Izquierda: Paneles 01 y 02 (Rotados en Y positivo) -->
+          <div class="flex flex-col gap-5 transform transition-transform duration-500 hover:scale-102" style="transform: rotateY(8deg) translateZ(20px);">
+            <div class="bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(16,185,129,0.2)]">
               <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">01. Capa Cliente</span>
-              <h3 class="font-black text-white text-sm mt-1 tracking-wide">{{ selectedArchitecture?.frontend | uppercase }}</h3>
+              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.frontend | uppercase }}</h3>
               <p class="text-xs text-slate-300 mt-2 leading-relaxed">Interfaz modular de alto rendimiento con renderizado acelerado por GPU.</p>
             </div>
 
-            <div class="bg-slate-950/90 backdrop-blur-xl border border-orange-500/30 p-4 rounded-2xl shadow-xl">
+            <div class="bg-slate-950/90 backdrop-blur-2xl border border-orange-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(249,115,22,0.2)]">
               <span class="text-[10px] font-mono text-orange-400 uppercase tracking-widest font-bold">02. Seguridad & Auth</span>
-              <h3 class="font-black text-white text-sm mt-1 tracking-wide">{{ selectedArchitecture?.auth | uppercase }}</h3>
+              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.auth | uppercase }}</h3>
               <p class="text-xs text-slate-300 mt-2 leading-relaxed">Gestión de identidad cifrada con tokens JWT y sesiones seguras.</p>
             </div>
           </div>
 
-          <!-- Contenedor central donde se aloja perfectamente el Canvas 3D en la vista final -->
-          <div class="lg:col-span-2 h-[520px] bg-slate-950/60 backdrop-blur-md border border-emerald-500/40 rounded-3xl p-4 shadow-2xl relative overflow-hidden">
-            <!-- El canvas 3D se renderiza aquí al activarse isBuilt -->
-          </div>
+          <!-- Centro: Vacío libre para apreciar el Canvas 3D de fondo en pantalla completa -->
+          <div class="hidden lg:block pointer-events-none"></div>
 
-          <div class="flex flex-col gap-4">
-            <div class="bg-slate-950/90 backdrop-blur-xl border border-rose-500/30 p-4 rounded-2xl shadow-xl">
+          <!-- Columna Derecha: Paneles 03 y 04 (Rotados en Y negativo) -->
+          <div class="flex flex-col gap-5 transform transition-transform duration-500 hover:scale-102" style="transform: rotateY(-8deg) translateZ(20px);">
+            <div class="bg-slate-950/90 backdrop-blur-2xl border border-rose-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(244,63,94,0.2)]">
               <span class="text-[10px] font-mono text-rose-400 uppercase tracking-widest font-bold">03. Backend Core</span>
-              <h3 class="font-black text-white text-sm mt-1 tracking-wide">{{ selectedArchitecture?.backend | uppercase }}</h3>
+              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.backend | uppercase }}</h3>
               <p class="text-xs text-slate-300 mt-2 leading-relaxed">Servidor modular basado en TypeScript con inyección de dependencias.</p>
             </div>
 
-            <div class="bg-slate-950/90 backdrop-blur-xl border border-emerald-500/30 p-4 rounded-2xl shadow-xl">
+            <div class="bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(16,185,129,0.2)]">
               <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">04. Almacenamiento & Cloud</span>
-              <h3 class="font-black text-white text-sm mt-1 tracking-wide">{{ selectedArchitecture?.database | uppercase }}</h3>
+              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.database | uppercase }}</h3>
               <p class="text-xs text-slate-300 mt-2 leading-relaxed">Base de datos transaccional con sincronización de datos en tiempo real.</p>
             </div>
           </div>
