@@ -21,7 +21,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
             <div class="w-3 h-3 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]"></div>
             <span class="text-xs uppercase tracking-widest text-cyan-400 font-mono">System Status: Interactive Wizard Active</span>
           </div>
-          <span class="text-xs text-slate-400 font-mono">Fase 3: Architecture Builder</span>
+          <span class="text-xs text-slate-400 font-mono">Fase 4: 3D Engine & Connectors</span>
         </div>
 
         <h1 class="text-2xl font-extrabold tracking-tight text-white mb-2">
@@ -45,7 +45,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
           <span>STACK: {{ selectedArchitecture.frontend }} + {{ selectedArchitecture.backend }} + {{ selectedArchitecture.database }}</span>
         </div>
 
-        <app-isometric-canvas></app-isometric-canvas>
+        <app-isometric-canvas [architecture]="selectedArchitecture"></app-isometric-canvas>
       </div>
 
     </main>
