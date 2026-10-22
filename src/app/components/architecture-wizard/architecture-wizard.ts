@@ -33,66 +33,67 @@ interface WizardStep {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="relative w-full bg-slate-900/90 backdrop-blur-2xl border border-cyan-500/40 rounded-2xl p-6 shadow-2xl shadow-cyan-950/60 text-slate-100">
+    <div class="relative w-full bg-slate-950/85 backdrop-blur-2xl border border-emerald-500/40 rounded-3xl p-8 shadow-[0_0_50px_rgba(16,185,129,0.2)] text-slate-100 transition-all duration-500" style="perspective: 1200px;">
       
-      <!-- Stepper / Encabezado de Progreso -->
-      <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+      <!-- Stepper / Encabezado de Progreso Estilo Consola -->
+      <div class="flex items-center justify-between border-b border-emerald-500/20 pb-4 mb-8">
         <div>
-          <span class="text-xs font-mono uppercase text-cyan-400 tracking-wider">Paso {{ currentStep + 1 }} de {{ steps.length }}</span>
-          <h2 class="text-xl font-bold text-white tracking-wide">{{ activeStep.title }}</h2>
-          <p class="text-xs text-slate-400 mt-1">{{ activeStep.subtitle }}</p>
+          <span class="text-xs font-mono uppercase text-emerald-400 tracking-widest">SISTEMA // SECCIÓN {{ currentStep + 1 }} DE {{ steps.length }}</span>
+          <h2 class="text-2xl font-black text-white tracking-wider mt-1 drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">{{ activeStep.title }}</h2>
+          <p class="text-xs text-slate-400 mt-1 font-mono">{{ activeStep.subtitle }}</p>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-2">
           <div 
             *ngFor="let step of steps; let i = index"
-            class="w-3 h-3 rounded-full transition-all duration-300"
+            class="w-3.5 h-3.5 rounded-full transition-all duration-300 border border-emerald-500/40"
             [ngClass]="{
-              'bg-cyan-400 shadow-[0_0_8px_#22d3ee] scale-110': i === currentStep,
-              'bg-emerald-500': i < currentStep,
-              'bg-slate-700': i > currentStep
+              'bg-emerald-400 shadow-[0_0_12px_#34d399] scale-125': i === currentStep,
+              'bg-emerald-900/60': i < currentStep,
+              'bg-slate-900': i > currentStep
             }">
           </div>
         </div>
       </div>
 
-      <!-- Opciones del Paso Actual -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <!-- Contenedor con Perspectiva Curvada Estilo Xbox Blade -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 transform-gpu transition-all duration-500">
         <div 
-          *ngFor="let option of activeStep.options"
+          *ngFor="let option of activeStep.options; let idx = index"
           (click)="selectOption(activeStep.category, option.id)"
-          class="relative cursor-pointer group p-4 rounded-xl border transition-all duration-200 bg-slate-950/70 hover:bg-slate-800/80 flex flex-col justify-between"
+          class="relative cursor-pointer group p-5 rounded-2xl border transition-all duration-300 bg-slate-900/90 hover:bg-slate-900 flex flex-col justify-between shadow-2xl"
+          [style.transform]="isSelected(activeStep.category, option.id) ? 'scale(1.03) translateZ(20px)' : 'scale(1) translateZ(0px)'"
           [ngClass]="{
-            'border-cyan-400 bg-cyan-950/40 shadow-[0_0_20px_rgba(34,211,238,0.3)]': isSelected(activeStep.category, option.id),
-            'border-slate-800 hover:border-slate-600': !isSelected(activeStep.category, option.id)
+            'border-emerald-400 bg-emerald-950/40 shadow-[0_0_30px_rgba(16,185,129,0.3)] ring-2 ring-emerald-400/50': isSelected(activeStep.category, option.id),
+            'border-emerald-900/40 hover:border-emerald-500/60': !isSelected(activeStep.category, option.id)
           }">
           
           <div>
             <!-- Header con Icono Oficial CDN y Badge -->
             <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center p-1.5 shadow-inner group-hover:border-cyan-500/50 transition-colors overflow-hidden">
-                  <img [src]="option.iconUrl" [alt]="option.name" class="w-full h-full object-contain filter drop-shadow">
+              <div class="flex items-center gap-3.5">
+                <div class="w-10 h-10 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-center p-2 shadow-inner group-hover:border-emerald-400 transition-colors overflow-hidden">
+                  <img [src]="option.iconUrl" [alt]="option.name" class="w-full h-full object-contain filter drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]">
                 </div>
-                <h3 class="font-bold text-slate-100 group-hover:text-cyan-300 transition-colors text-sm">{{ option.name }}</h3>
+                <h3 class="font-extrabold text-slate-100 group-hover:text-emerald-300 transition-colors text-sm tracking-wide">{{ option.name }}</h3>
               </div>
-              <span *ngIf="option.badge" class="text-[10px] uppercase px-2 py-0.5 rounded font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              <span *ngIf="option.badge" class="text-[10px] uppercase px-2.5 py-1 rounded-md font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                 {{ option.badge }}
               </span>
             </div>
 
-            <p class="text-xs text-slate-400 mb-3 leading-relaxed">{{ option.description }}</p>
+            <p class="text-xs text-slate-300 mb-4 leading-relaxed font-sans">{{ option.description }}</p>
 
             <!-- Recomendación o Tip del sistema -->
-            <div *ngIf="option.recommendation" class="mb-3 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-start gap-1.5">
-              <span>💡</span>
-              <span>{{ option.recommendation }}</span>
+            <div *ngIf="option.recommendation" class="mb-4 p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-start gap-2 shadow-inner">
+              <span class="text-emerald-400">⚡</span>
+              <span class="leading-snug">{{ option.recommendation }}</span>
             </div>
           </div>
 
           <!-- Tags tecnicos -->
-          <div class="flex flex-wrap gap-1.5 pt-2 border-t border-slate-900">
-            <span *ngFor="let tag of option.tags" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
+          <div class="flex flex-wrap gap-2 pt-3 border-t border-emerald-900/30">
+            <span *ngFor="let tag of option.tags" class="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 text-emerald-400/90 border border-emerald-500/20 shadow-sm">
               {{ tag }}
             </span>
           </div>
@@ -100,14 +101,14 @@ interface WizardStep {
       </div>
 
       <!-- Botones de Navegación -->
-      <div class="flex items-center justify-between border-t border-slate-800 pt-4">
+      <div class="flex items-center justify-between border-t border-emerald-500/20 pt-6">
         <button 
           (click)="prevStep()"
           [disabled]="currentStep === 0"
-          class="px-4 py-2 rounded-lg font-mono text-xs font-semibold border transition-all cursor-pointer"
+          class="px-5 py-2.5 rounded-xl font-mono text-xs font-bold border transition-all cursor-pointer shadow-md"
           [ngClass]="{
-            'border-slate-800 text-slate-600 cursor-not-allowed': currentStep === 0,
-            'border-slate-700 text-slate-300 hover:border-cyan-500 hover:text-cyan-400': currentStep > 0
+            'border-slate-800 text-slate-600 cursor-not-allowed bg-slate-950/40': currentStep === 0,
+            'border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:bg-emerald-950/30': currentStep > 0
           }">
           ← ANTERIOR
         </button>
@@ -116,10 +117,10 @@ interface WizardStep {
           *ngIf="currentStep < steps.length - 1"
           (click)="nextStep()"
           [disabled]="!hasSelectedCurrent()"
-          class="px-5 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg cursor-pointer"
+          class="px-6 py-2.5 rounded-xl font-mono text-xs font-extrabold border transition-all shadow-lg cursor-pointer tracking-wider"
           [ngClass]="{
-            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
-            'border-cyan-400 text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-cyan-500/20': hasSelectedCurrent()
+            'border-slate-800 text-slate-600 bg-slate-950/40 cursor-not-allowed': !hasSelectedCurrent(),
+            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.4)]': hasSelectedCurrent()
           }">
           SIGUIENTE →
         </button>
@@ -128,12 +129,12 @@ interface WizardStep {
           *ngIf="currentStep === steps.length - 1"
           (click)="finishWizard()"
           [disabled]="!hasSelectedCurrent()"
-          class="px-6 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg cursor-pointer animate-pulse"
+          class="px-7 py-2.5 rounded-xl font-mono text-xs font-black border transition-all shadow-xl cursor-pointer animate-pulse tracking-wider"
           [ngClass]="{
-            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
-            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/30': hasSelectedCurrent()
+            'border-slate-800 text-slate-600 bg-slate-950/40 cursor-not-allowed': !hasSelectedCurrent(),
+            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.6)]': hasSelectedCurrent()
           }">
-          ⚡ CONSTRUIR ARQUITECTURA EN 3D
+          ⚡ DESPLEGAR MATRIZ 3D
         </button>
       </div>
 

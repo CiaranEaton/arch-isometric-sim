@@ -9,7 +9,7 @@ interface Node3D {
   label: string;
   color: number;
   position: THREE.Vector3;
-  stepUnlock: number; // Paso en el que se desbloquea y aparece
+  stepUnlock: number;
   mesh?: THREE.Mesh;
 }
 
@@ -18,14 +18,8 @@ interface Node3D {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="relative w-full h-full min-h-[500px] bg-[#010b06] border border-emerald-500/40 rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(16,185,129,0.15)]">
+    <div class="relative w-full h-full min-h-[450px] bg-transparent overflow-hidden">
       <div #canvasContainer class="w-full h-full cursor-grab active:cursor-grabbing"></div>
-      
-      <!-- HUD Táctico de Construcción Progresiva -->
-      <div class="absolute top-4 left-4 bg-slate-950/80 backdrop-blur-md border border-emerald-500/50 px-4 py-2 rounded-xl font-mono text-[11px] text-emerald-400 flex items-center gap-3 shadow-lg pointer-events-none">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-        <span>MATRIZ EN CONSTRUCCIÓN | FASE: {{ currentStep + 1 }}/6</span>
-      </div>
     </div>
   `
 })
@@ -33,7 +27,7 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('canvasContainer', { static: true }) container!: ElementRef;
   @Input() architecture: ArchitectureSelection | null = null;
   @Input() currentStep: number = 0;
-  @Input() isFinalView: boolean = false; // Indica si ya se dio clic en "Construir" para vista total
+  @Input() isFinalView: boolean = false;
 
   private scene!: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
@@ -51,6 +45,7 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
     this.createGrid();
     this.buildArchitecture3D();
     this.animate();
+    window.addEventListener('resize', this.onWindowResize);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -64,37 +59,52 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
     }
+    window.removeEventListener('resize', this.onWindowResize);
     if (this.renderer) {
       this.renderer.dispose();
     }
   }
+
+  private onWindowResize = (): void => {
+    if (!this.container || !this.renderer) return;
+    const width = this.container.nativeElement.clientWidth;
+    const height = this.container.nativeElement.clientHeight;
+    const aspect = width / height;
+    const d = 12;
+    this.camera.left = -d * aspect;
+    this.camera.right = d * aspect;
+    this.camera.top = d;
+    this.camera.bottom = -d;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  };
 
   private initThree(): void {
     const width = this.container.nativeElement.clientWidth;
     const height = this.container.nativeElement.clientHeight;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#010b06');
+    this.scene.background = null; // Transparente para unirse al fondo general
 
     const aspect = width / height;
-    const d = 11;
+    const d = 12;
     this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 1000);
     this.camera.position.set(20, 20, 20);
     this.camera.lookAt(0, 0, 0);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.container.nativeElement.appendChild(this.renderer.domElement);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     this.scene.add(ambientLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0x10b981, 1.8);
+    const dirLight1 = new THREE.DirectionalLight(0x10b981, 2.0);
     dirLight1.position.set(15, 25, 15);
     this.scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x22d3ee, 1.2);
+    const dirLight2 = new THREE.DirectionalLight(0x22d3ee, 1.5);
     dirLight2.position.set(-15, 15, -15);
     this.scene.add(dirLight2);
 
@@ -103,25 +113,24 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private createGrid(): void {
-    const gridHelper = new THREE.GridHelper(26, 26, 0x10b981, 0x064e3b);
+    const gridHelper = new THREE.GridHelper(28, 28, 0x10b981, 0x064e3b);
     gridHelper.position.y = -0.01;
     this.scene.add(gridHelper);
   }
 
   private updateCameraTargetForStep(): void {
     if (this.isFinalView) {
-      this.targetCameraPos.set(22, 25, 22);
+      this.targetCameraPos.set(18, 22, 18);
       return;
     }
 
-    // Mover la cámara sutilmente según el paso actual del wizard
     switch (this.currentStep) {
-      case 0: this.targetCameraPos.set(12, 16, 18); break;
-      case 1: this.targetCameraPos.set(8, 15, 20); break; // Frontend
-      case 2: this.targetCameraPos.set(15, 18, 15); break; // Backend
-      case 3: this.targetCameraPos.set(22, 16, 12); break; // Database
-      case 4: this.targetCameraPos.set(10, 20, 22); break; // Auth
-      case 5: this.targetCameraPos.set(20, 22, 20); break; // DevOps
+      case 0: this.targetCameraPos.set(14, 18, 16); break;
+      case 1: this.targetCameraPos.set(6, 15, 22); break; // Frontend
+      case 2: this.targetCameraPos.set(16, 20, 16); break; // Backend
+      case 3: this.targetCameraPos.set(24, 16, 12); break; // Database
+      case 4: this.targetCameraPos.set(10, 22, 24); break; // Auth
+      case 5: this.targetCameraPos.set(18, 24, 18); break; // DevOps
       default: this.targetCameraPos.set(20, 20, 20);
     }
   }
@@ -133,7 +142,6 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
 
     if (!this.architecture) return;
 
-    // Definición de nodos con su respectivo paso de desbloqueo en el wizard
     const allNodes: Node3D[] = [
       { id: 'frontend', role: 'CLIENTE', label: (this.architecture.frontend || 'ANGULAR').toUpperCase(), color: 0xef4444, position: new THREE.Vector3(-6, 0, 0), stepUnlock: 1 },
       { id: 'backend', role: 'BACKEND', label: (this.architecture.backend || 'NESTJS').toUpperCase(), color: 0xf43f5e, position: new THREE.Vector3(1, 0, 0), stepUnlock: 2 },
@@ -142,7 +150,6 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
       { id: 'devops', role: 'DEVOPS', label: (this.architecture.devops || 'DOCKER').toUpperCase(), color: 0x0ea5e9, position: new THREE.Vector3(1, 0, 4.5), stepUnlock: 5 }
     ];
 
-    // Filtrar nodos visibles según el paso actual (o mostrar todos si es la vista final)
     const visibleNodes = allNodes.filter(node => this.isFinalView || this.currentStep >= node.stepUnlock);
 
     visibleNodes.forEach(node => {
@@ -150,7 +157,7 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
       const material = new THREE.MeshStandardMaterial({
         color: node.color,
         roughness: 0.2,
-        metalness: 0.9
+        metalness: 0.85
       });
 
       const mesh = new THREE.Mesh(geometry, material);
@@ -159,14 +166,13 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
       node.mesh = mesh;
 
       const edges = new THREE.EdgesGeometry(geometry);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2 });
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x34d399, linewidth: 2 });
       const wireframe = new THREE.LineSegments(edges, lineMaterial);
       mesh.add(wireframe);
 
       this.nodesGroup.add(mesh);
     });
 
-    // Conectar cables progresivamente conforme aparecen los nodos necesarios
     const hasNode = (id: string) => visibleNodes.some(n => n.id === id);
 
     if (hasNode('frontend') && hasNode('auth')) {
@@ -200,7 +206,7 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
       color: 0x10b981,
       wireframe: true,
       transparent: true,
-      opacity: 0.35
+      opacity: 0.4
     });
     const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
     this.cablesGroup.add(tube);
@@ -222,7 +228,7 @@ export class IsometricCanvasComponent implements OnInit, OnDestroy, OnChanges {
   private animate = (): void => {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
-    this.camera.position.lerp(this.targetCameraPos, 0.05);
+    this.camera.position.lerp(this.targetCameraPos, 0.06);
     this.camera.lookAt(0, 0, 0);
 
     this.nodesGroup.children.forEach((child, index) => {
