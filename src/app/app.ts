@@ -10,8 +10,11 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
   template: `
     <main class="min-h-screen bg-[#010b06] text-slate-100 flex flex-col items-center justify-start p-6 relative overflow-x-hidden font-sans gap-8">
       
-      <!-- CANVAS 3D MAESTRO DE FONDO UNIFICADO -->
-      <div class="fixed inset-0 z-0 pointer-events-none transition-all duration-1000" [ngClass]="{'opacity-40': !isBuilt, 'opacity-100': isBuilt}">
+      <!-- CANVAS 3D MAESTRO: Fondo durante el wizard, componente embebido en vista final -->
+      <div [ngClass]="{
+        'fixed inset-0 z-0 pointer-events-none opacity-40 transition-all duration-1000': !isBuilt,
+        'absolute inset-0 w-full h-full': isBuilt
+      }">
         <app-isometric-canvas 
           [architecture]="currentSelection" 
           [currentStep]="activeWizardStep"
@@ -19,7 +22,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </app-isometric-canvas>
       </div>
 
-      <!-- Efectos lumínicos ambientales Xbox Classic -->
+      <!-- Efectos lumínicos ambientales -->
       <div class="fixed -top-40 -left-40 w-96 h-96 bg-emerald-500/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
       <div class="fixed -bottom-40 -right-40 w-96 h-96 bg-cyan-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
 
@@ -30,7 +33,6 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
             <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shadow-[0_0_10px_#10b981]"></div>
             <span class="text-xs uppercase tracking-widest text-emerald-400 font-mono">XBOX-DASH MATRIX // LIVE ENGINE</span>
           </div>
-          <!-- Versión sutil y desatendida -->
           <span class="text-[10px] text-slate-500 font-mono opacity-50 tracking-wider">xbox-engine v3.0</span>
         </div>
 
@@ -43,7 +45,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </p>
       </header>
 
-      <!-- MODO WIZARD CON PERSPECTIVA CURVADA -->
+      <!-- MODO WIZARD -->
       <section *ngIf="!isBuilt" class="relative z-10 max-w-5xl w-full transition-all duration-700 transform">
         <app-architecture-wizard 
           (stepChange)="onStepChange($event)"
@@ -52,7 +54,7 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
         </app-architecture-wizard>
       </section>
 
-      <!-- MODO VISTA TÁCTICA FINAL (HUDs Laterales + Canvas Central) -->
+      <!-- MODO VISTA TÁCTICA FINAL -->
       <section *ngIf="isBuilt" class="relative z-10 max-w-7xl w-full flex flex-col gap-6 transition-all duration-1000 ease-in-out transform scale-100 opacity-100 animate-fade-in">
         
         <div class="bg-slate-950/90 border border-emerald-500/50 p-4 rounded-2xl flex flex-wrap items-center justify-between font-mono text-xs shadow-2xl backdrop-blur-xl">
@@ -81,8 +83,9 @@ import { ArchitectureWizardComponent, ArchitectureSelection } from './components
             </div>
           </div>
 
-          <div class="lg:col-span-2 h-[520px] bg-slate-950/40 backdrop-blur-md border border-emerald-500/30 rounded-3xl p-4 shadow-2xl">
-            <!-- Espacio central optimizado para el canvas de fondo -->
+          <!-- Contenedor central donde se aloja perfectamente el Canvas 3D en la vista final -->
+          <div class="lg:col-span-2 h-[520px] bg-slate-950/60 backdrop-blur-md border border-emerald-500/40 rounded-3xl p-4 shadow-2xl relative overflow-hidden">
+            <!-- El canvas 3D se renderiza aquí al activarse isBuilt -->
           </div>
 
           <div class="flex flex-col gap-4">

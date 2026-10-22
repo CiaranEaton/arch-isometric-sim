@@ -33,9 +33,9 @@ interface WizardStep {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="relative w-full bg-slate-950/85 backdrop-blur-2xl border border-emerald-500/40 rounded-3xl p-8 shadow-[0_0_50px_rgba(16,185,129,0.2)] text-slate-100 transition-all duration-500" style="perspective: 1200px;">
+    <div class="relative w-full bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/40 rounded-3xl p-8 shadow-[0_0_50px_rgba(16,185,129,0.2)] text-slate-100 transition-all duration-700 transform-gpu" style="perspective: 1200px;">
       
-      <!-- Stepper / Encabezado de Progreso Estilo Consola -->
+      <!-- Stepper / Encabezado de Progreso -->
       <div class="flex items-center justify-between border-b border-emerald-500/20 pb-4 mb-8">
         <div>
           <span class="text-xs font-mono uppercase text-emerald-400 tracking-widest">SISTEMA // SECCIÓN {{ currentStep + 1 }} DE {{ steps.length }}</span>
@@ -46,7 +46,7 @@ interface WizardStep {
         <div class="flex items-center gap-2">
           <div 
             *ngFor="let step of steps; let i = index"
-            class="w-3.5 h-3.5 rounded-full transition-all duration-300 border border-emerald-500/40"
+            class="w-3.5 h-3.5 rounded-full transition-all duration-500 border border-emerald-500/40"
             [ngClass]="{
               'bg-emerald-400 shadow-[0_0_12px_#34d399] scale-125': i === currentStep,
               'bg-emerald-900/60': i < currentStep,
@@ -56,20 +56,18 @@ interface WizardStep {
         </div>
       </div>
 
-      <!-- Contenedor con Perspectiva Curvada Estilo Xbox Blade -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 transform-gpu transition-all duration-500">
+      <!-- Contenedor con Animación Suave de Deslizamiento (Fade / Slide) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 transition-all duration-500 transform-gpu" [ngClass]="animating ? 'opacity-0 translate-y-4 scale-98' : 'opacity-100 translate-y-0 scale-100'">
         <div 
-          *ngFor="let option of activeStep.options; let idx = index"
+          *ngFor="let option of activeStep.options"
           (click)="selectOption(activeStep.category, option.id)"
           class="relative cursor-pointer group p-5 rounded-2xl border transition-all duration-300 bg-slate-900/90 hover:bg-slate-900 flex flex-col justify-between shadow-2xl"
-          [style.transform]="isSelected(activeStep.category, option.id) ? 'scale(1.03) translateZ(20px)' : 'scale(1) translateZ(0px)'"
           [ngClass]="{
             'border-emerald-400 bg-emerald-950/40 shadow-[0_0_30px_rgba(16,185,129,0.3)] ring-2 ring-emerald-400/50': isSelected(activeStep.category, option.id),
             'border-emerald-900/40 hover:border-emerald-500/60': !isSelected(activeStep.category, option.id)
           }">
           
           <div>
-            <!-- Header con Icono Oficial CDN y Badge -->
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-3.5">
                 <div class="w-10 h-10 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-center p-2 shadow-inner group-hover:border-emerald-400 transition-colors overflow-hidden">
@@ -84,14 +82,12 @@ interface WizardStep {
 
             <p class="text-xs text-slate-300 mb-4 leading-relaxed font-sans">{{ option.description }}</p>
 
-            <!-- Recomendación o Tip del sistema -->
             <div *ngIf="option.recommendation" class="mb-4 p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-start gap-2 shadow-inner">
               <span class="text-emerald-400">⚡</span>
               <span class="leading-snug">{{ option.recommendation }}</span>
             </div>
           </div>
 
-          <!-- Tags tecnicos -->
           <div class="flex flex-wrap gap-2 pt-3 border-t border-emerald-900/30">
             <span *ngFor="let tag of option.tags" class="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 text-emerald-400/90 border border-emerald-500/20 shadow-sm">
               {{ tag }}
@@ -104,7 +100,7 @@ interface WizardStep {
       <div class="flex items-center justify-between border-t border-emerald-500/20 pt-6">
         <button 
           (click)="prevStep()"
-          [disabled]="currentStep === 0"
+          [disabled]="currentStep === 0 || animating"
           class="px-5 py-2.5 rounded-xl font-mono text-xs font-bold border transition-all cursor-pointer shadow-md"
           [ngClass]="{
             'border-slate-800 text-slate-600 cursor-not-allowed bg-slate-950/40': currentStep === 0,
@@ -116,7 +112,7 @@ interface WizardStep {
         <button 
           *ngIf="currentStep < steps.length - 1"
           (click)="nextStep()"
-          [disabled]="!hasSelectedCurrent()"
+          [disabled]="!hasSelectedCurrent() || animating"
           class="px-6 py-2.5 rounded-xl font-mono text-xs font-extrabold border transition-all shadow-lg cursor-pointer tracking-wider"
           [ngClass]="{
             'border-slate-800 text-slate-600 bg-slate-950/40 cursor-not-allowed': !hasSelectedCurrent(),
@@ -128,7 +124,7 @@ interface WizardStep {
         <button 
           *ngIf="currentStep === steps.length - 1"
           (click)="finishWizard()"
-          [disabled]="!hasSelectedCurrent()"
+          [disabled]="!hasSelectedCurrent() || animating"
           class="px-7 py-2.5 rounded-xl font-mono text-xs font-black border transition-all shadow-xl cursor-pointer animate-pulse tracking-wider"
           [ngClass]="{
             'border-slate-800 text-slate-600 bg-slate-950/40 cursor-not-allowed': !hasSelectedCurrent(),
@@ -147,6 +143,7 @@ export class ArchitectureWizardComponent {
   @Output() architectureComplete = new EventEmitter<ArchitectureSelection>();
 
   currentStep = 0;
+  animating = false;
 
   selection: ArchitectureSelection = {
     architectureType: 'monorepo',
@@ -329,16 +326,24 @@ export class ArchitectureWizardComponent {
   }
 
   nextStep(): void {
-    if (this.currentStep < this.steps.length - 1) {
-      this.currentStep++;
-      this.stepChange.emit(this.currentStep);
+    if (this.currentStep < this.steps.length - 1 && !this.animating) {
+      this.animating = true;
+      setTimeout(() => {
+        this.currentStep++;
+        this.stepChange.emit(this.currentStep);
+        this.animating = false;
+      }, 250);
     }
   }
 
   prevStep(): void {
-    if (this.currentStep > 0) {
-      this.currentStep--;
-      this.stepChange.emit(this.currentStep);
+    if (this.currentStep > 0 && !this.animating) {
+      this.animating = true;
+      setTimeout(() => {
+        this.currentStep--;
+        this.stepChange.emit(this.currentStep);
+        this.animating = false;
+      }, 250);
     }
   }
 
