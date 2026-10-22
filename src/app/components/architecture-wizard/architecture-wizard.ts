@@ -64,8 +64,8 @@ interface WizardStep {
           (click)="selectOption(activeStep.category, option.id)"
           class="relative cursor-pointer group p-4 rounded-xl border transition-all duration-200 bg-slate-950/60 hover:bg-slate-800/80 flex flex-col justify-between"
           [ngClass]="{
-            'border-cyan-400 bg-cyan-950/30 shadow-[0_0_15px_rgba(34,211,238,0.25)]': selection[activeStep.category] === option.id,
-            'border-slate-800 hover:border-slate-600': selection[activeStep.category] !== option.id
+            'border-cyan-400 bg-cyan-950/30 shadow-[0_0_15px_rgba(34,211,238,0.25)]': isSelected(activeStep.category, option.id),
+            'border-slate-800 hover:border-slate-600': !isSelected(activeStep.category, option.id)
           }">
           
           <div>
@@ -114,11 +114,11 @@ interface WizardStep {
         <button 
           *ngIf="currentStep < steps.length - 1"
           (click)="nextStep()"
-          [disabled]="!selection[activeStep.category]"
+          [disabled]="!hasSelectedCurrent()"
           class="px-5 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg"
           [ngClass]="{
-            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !selection[activeStep.category],
-            'border-cyan-400 text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-cyan-500/20 cursor-pointer': selection[activeStep.category]
+            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
+            'border-cyan-400 text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-cyan-500/20 cursor-pointer': hasSelectedCurrent()
           }">
           SIGUIENTE →
         </button>
@@ -126,11 +126,11 @@ interface WizardStep {
         <button 
           *ngIf="currentStep === steps.length - 1"
           (click)="finishWizard()"
-          [disabled]="!selection[activeStep.category]"
+          [disabled]="!hasSelectedCurrent()"
           class="px-6 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg"
           [ngClass]="{
-            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !selection[activeStep.category],
-            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/20 cursor-pointer': selection[activeStep.category]
+            'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
+            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/20 cursor-pointer': hasSelectedCurrent()
           }">
           ⚡ CONSTRUIR ARQUITECTURA EN 3D
         </button>
@@ -157,6 +157,19 @@ export class ArchitectureWizardComponent {
 
   constructor(private sanitizer: DomSanitizer) {
     this.initSteps();
+  }
+
+  get activeStep(): WizardStep {
+    return this.steps[this.currentStep];
+  }
+
+  isSelected(category: keyof ArchitectureSelection, optionId: string): boolean {
+    return this.selection[category] === optionId;
+  }
+
+  hasSelectedCurrent(): boolean {
+    const cat = this.activeStep.category;
+    return !!this.selection[cat];
   }
 
   private svg(pathData: string, color: string = '#22d3ee'): SafeHtml {
@@ -204,7 +217,6 @@ export class ArchitectureWizardComponent {
             description: 'Framework robusto, enfocado en TypeScript estricto, arquitectura modular e inyección de dependencias.',
             recommendation: 'Nuestra opción nativa para integrar Three.js con tipado estricto y excelente desempeño.',
             tags: ['Angular 19+', 'RxJS', 'Tailwind CSS'],
-            // Angular shield SVG path
             iconSvg: this.svg('M12 2L2 5.8l2.9 11.9L12 22l7.1-4.3L22 5.8 12 2zm0 3.3l5.3 2.1-1.1 5.1L12 18.6 7.8 14.5l-1.1-5.1L12 5.3z', '#ef4444')
           },
           {
