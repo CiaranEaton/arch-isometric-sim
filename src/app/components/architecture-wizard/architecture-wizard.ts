@@ -33,7 +33,7 @@ interface WizardStep {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="relative w-full bg-slate-900/90 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-6 shadow-2xl shadow-cyan-950/40 text-slate-100">
+    <div class="relative w-full bg-slate-900/90 backdrop-blur-2xl border border-cyan-500/40 rounded-2xl p-6 shadow-2xl shadow-cyan-950/60 text-slate-100">
       
       <!-- Stepper / Encabezado de Progreso -->
       <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
@@ -61,9 +61,9 @@ interface WizardStep {
         <div 
           *ngFor="let option of activeStep.options"
           (click)="selectOption(activeStep.category, option.id)"
-          class="relative cursor-pointer group p-4 rounded-xl border transition-all duration-200 bg-slate-950/60 hover:bg-slate-800/80 flex flex-col justify-between"
+          class="relative cursor-pointer group p-4 rounded-xl border transition-all duration-200 bg-slate-950/70 hover:bg-slate-800/80 flex flex-col justify-between"
           [ngClass]="{
-            'border-cyan-400 bg-cyan-950/30 shadow-[0_0_15px_rgba(34,211,238,0.25)]': isSelected(activeStep.category, option.id),
+            'border-cyan-400 bg-cyan-950/40 shadow-[0_0_20px_rgba(34,211,238,0.3)]': isSelected(activeStep.category, option.id),
             'border-slate-800 hover:border-slate-600': !isSelected(activeStep.category, option.id)
           }">
           
@@ -104,7 +104,7 @@ interface WizardStep {
         <button 
           (click)="prevStep()"
           [disabled]="currentStep === 0"
-          class="px-4 py-2 rounded-lg font-mono text-xs font-semibold border transition-all"
+          class="px-4 py-2 rounded-lg font-mono text-xs font-semibold border transition-all cursor-pointer"
           [ngClass]="{
             'border-slate-800 text-slate-600 cursor-not-allowed': currentStep === 0,
             'border-slate-700 text-slate-300 hover:border-cyan-500 hover:text-cyan-400': currentStep > 0
@@ -116,10 +116,10 @@ interface WizardStep {
           *ngIf="currentStep < steps.length - 1"
           (click)="nextStep()"
           [disabled]="!hasSelectedCurrent()"
-          class="px-5 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg"
+          class="px-5 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg cursor-pointer"
           [ngClass]="{
             'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
-            'border-cyan-400 text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-cyan-500/20 cursor-pointer': hasSelectedCurrent()
+            'border-cyan-400 text-slate-950 bg-cyan-400 hover:bg-cyan-300 shadow-cyan-500/20': hasSelectedCurrent()
           }">
           SIGUIENTE →
         </button>
@@ -128,10 +128,10 @@ interface WizardStep {
           *ngIf="currentStep === steps.length - 1"
           (click)="finishWizard()"
           [disabled]="!hasSelectedCurrent()"
-          class="px-6 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg"
+          class="px-6 py-2 rounded-lg font-mono text-xs font-bold border transition-all shadow-lg cursor-pointer animate-pulse"
           [ngClass]="{
             'border-slate-800 text-slate-600 bg-slate-900 cursor-not-allowed': !hasSelectedCurrent(),
-            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/20 cursor-pointer': hasSelectedCurrent()
+            'border-emerald-400 text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/30': hasSelectedCurrent()
           }">
           ⚡ CONSTRUIR ARQUITECTURA EN 3D
         </button>
@@ -141,6 +141,8 @@ interface WizardStep {
   `
 })
 export class ArchitectureWizardComponent {
+  @Output() stepChange = new EventEmitter<number>();
+  @Output() selectionChange = new EventEmitter<ArchitectureSelection>();
   @Output() architectureComplete = new EventEmitter<ArchitectureSelection>();
 
   currentStep = 0;
@@ -322,17 +324,20 @@ export class ArchitectureWizardComponent {
 
   selectOption(category: keyof ArchitectureSelection, optionId: string): void {
     this.selection[category] = optionId;
+    this.selectionChange.emit(this.selection);
   }
 
   nextStep(): void {
     if (this.currentStep < this.steps.length - 1) {
       this.currentStep++;
+      this.stepChange.emit(this.currentStep);
     }
   }
 
   prevStep(): void {
     if (this.currentStep > 0) {
       this.currentStep--;
+      this.stepChange.emit(this.currentStep);
     }
   }
 
