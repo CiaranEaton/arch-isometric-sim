@@ -388,7 +388,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.targetFocus.copy(SCENE_CENTER);
       this.targetZoom = 1;
     } else {
-      const slot = SLOTS[NODE_CATEGORIES[step - 1]];
+      const slot = SLOTS[NODE_CATEGORIES[step - 1]] ?? SLOTS['devops'];
       this.orbTargetPos.set(slot.x, NODE_BASE_Y, slot.z);
       this.orbTargetScale = 1.3;
       this.targetFocus.set(slot.x, 0, slot.z);
