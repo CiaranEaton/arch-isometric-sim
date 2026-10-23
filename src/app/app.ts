@@ -1,144 +1,167 @@
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { IsometricCanvasComponent } from './components/isometric-canvas/isometric-canvas';
-import { ArchitectureWizardComponent, ArchitectureSelection } from './components/architecture-wizard/architecture-wizard';
+import { ArchitectureWizardComponent } from './components/architecture-wizard/architecture-wizard';
+import { ArchitectureStateService } from './services/architecture-state.service';
+import { ArchitectureSelection } from './models/architecture.models';
+
+interface HudPanel {
+  index: string;
+  label: string;
+  category: keyof ArchitectureSelection;
+  /** Clases completas (estáticas) para que Tailwind las detecte. */
+  border: string;
+  glow: string;
+  text: string;
+}
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, IsometricCanvasComponent, ArchitectureWizardComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IsometricCanvasComponent, ArchitectureWizardComponent],
   template: `
-    <main class="min-h-screen text-slate-100 flex flex-col items-center justify-start p-6 relative overflow-x-hidden font-sans gap-8">
-      
-      <!-- CANVAS 3D MAESTRO: Pantalla completa fija en el fondo siempre -->
-      <div class="fixed inset-0 z-0 w-full h-full pointer-events-none transition-all duration-1000" [ngClass]="{'opacity-35': !isBuilt, 'opacity-100': isBuilt}">
-        <app-isometric-canvas 
-          [architecture]="currentSelection" 
-          [currentStep]="activeWizardStep"
-          [isFinalView]="isBuilt">
-        </app-isometric-canvas>
+    <main class="relative min-h-screen overflow-x-hidden font-sans text-slate-100">
+      <!-- Canvas 3D: capa de fondo real a pantalla completa (un único canvas en toda la app) -->
+      <div class="pointer-events-none fixed inset-0 z-0">
+        <app-isometric-canvas />
       </div>
 
-      <!-- Efectos lumínicos ambientales de fondo -->
-      <div class="fixed -top-40 -left-40 w-96 h-96 bg-emerald-500/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
-      <div class="fixed -bottom-40 -right-40 w-96 h-96 bg-cyan-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
+      <!-- Viñeta para que los paneles se lean siempre sobre el 3D -->
+      <div
+        class="pointer-events-none fixed inset-0 z-[1]"
+        style="background: radial-gradient(ellipse at 68% 50%, transparent 25%, rgba(2, 4, 10, 0.78) 100%);"
+      ></div>
 
-      <!-- Header principal compacto -->
-      <header class="relative z-10 max-w-5xl w-full bg-slate-950/85 backdrop-blur-2xl border border-emerald-500/40 rounded-2xl p-6 shadow-[0_0_30px_rgba(16,185,129,0.15)] transition-all duration-500">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-3">
-            <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shadow-[0_0_10px_#10b981]"></div>
-            <span class="text-xs uppercase tracking-widest text-emerald-400 font-mono">XBOX-DASH MATRIX // LIVE ENGINE</span>
+      <!-- Luces ambientales -->
+      <div class="pointer-events-none fixed -left-40 -top-40 z-[1] h-96 w-96 animate-pulse rounded-full bg-emerald-500/15 blur-[120px]"></div>
+      <div class="pointer-events-none fixed -bottom-40 -right-40 z-[1] h-96 w-96 animate-pulse rounded-full bg-cyan-600/15 blur-[120px]"></div>
+
+      <!-- Header compacto -->
+      <header class="relative z-10 mx-auto flex w-full max-w-7xl items-start justify-between gap-4 px-6 pt-6">
+        <div>
+          <div class="mb-2 flex items-center gap-3">
+            <span class="h-2.5 w-2.5 animate-ping rounded-full bg-emerald-400 shadow-[0_0_10px_#10b981]"></span>
+            <span class="font-mono text-xs tracking-widest text-emerald-400">XBOX-DASH MATRIX // LIVE ENGINE</span>
           </div>
-          <span class="text-[10px] text-slate-500 font-mono opacity-50 tracking-wider">xbox-engine v3.0</span>
+          <h1 class="text-2xl font-black tracking-wider text-white">
+            CYBER ARCHITECTURE <span class="text-emerald-400 drop-shadow-[0_0_10px_rgba(16,185,129,0.4)]">BUILDER</span>
+          </h1>
+          <p class="mt-1 max-w-md font-mono text-xs leading-relaxed text-slate-400">
+            Elige cada pieza de tu stack y mira cómo se arma la arquitectura en 3D.
+          </p>
         </div>
-
-        <h1 class="text-2xl font-black tracking-wider text-white mb-1">
-          CYBER ARCHITECTURE <span class="text-emerald-400 drop-shadow-[0_0_10px_rgba(16,185,129,0.4)]">BUILDER</span>
-        </h1>
-        
-        <p class="text-slate-400 text-xs leading-relaxed font-mono">
-          Sistema interactivo con perspectiva 3D y despliegue modular en tiempo real.
-        </p>
+        <span class="font-mono text-[10px] tracking-wider text-slate-500">xbox-engine v3.0</span>
       </header>
 
-      <!-- MODO WIZARD (Con transiciones suaves) -->
-      <section *ngIf="!isBuilt" class="relative z-10 max-w-5xl w-full transition-all duration-700 transform">
-        <app-architecture-wizard 
-          (stepChange)="onStepChange($event)"
-          (selectionChange)="onSelectionUpdate($event)" 
-          (architectureComplete)="onArchitectureSelected($event)">
-        </app-architecture-wizard>
-      </section>
-
-      <!-- MODO VISTA TÁCTICA FINAL (Paneles 3D Flotantes a los lados, dejando el centro libre) -->
-      <section *ngIf="isBuilt" class="relative z-10 max-w-7xl w-full flex flex-col gap-6 transition-all duration-1000 ease-in-out animate-fade-in" style="perspective: 1400px;">
-        
-        <!-- Barra de Estado Superior -->
-        <div class="bg-slate-950/90 border border-emerald-500/50 p-4 rounded-2xl flex flex-wrap items-center justify-between font-mono text-xs shadow-2xl backdrop-blur-xl">
-          <div class="flex items-center gap-3">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span class="text-emerald-400 font-bold tracking-wider">MATRIZ ESTABLECIDA: {{ selectedArchitecture?.architectureType?.toUpperCase() }}</span>
+      @if (!state.isBuilt()) {
+        <!-- WIZARD: menú a la izquierda, el orbe 3D queda a la derecha -->
+        <section class="relative z-10 mx-auto mt-6 w-full max-w-7xl px-6 pb-10">
+          <div class="w-full lg:w-[520px]">
+            <app-architecture-wizard />
           </div>
-          <button (click)="resetBuilder()" class="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/40 rounded-xl transition-all text-xs cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.25)] font-bold">
-            ⚙️ RECONFIGURAR STACK
-          </button>
-        </div>
-
-        <!-- Layout con HUDs Laterales en 3D (Rotados hacia adentro estilo consola) -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center pt-4">
-          
-          <!-- Columna Izquierda: Paneles 01 y 02 (Rotados en Y positivo) -->
-          <div class="flex flex-col gap-5 transform transition-transform duration-500 hover:scale-102" style="transform: rotateY(8deg) translateZ(20px);">
-            <div class="bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(16,185,129,0.2)]">
-              <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">01. Capa Cliente</span>
-              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.frontend | uppercase }}</h3>
-              <p class="text-xs text-slate-300 mt-2 leading-relaxed">Interfaz modular de alto rendimiento con renderizado acelerado por GPU.</p>
+        </section>
+      } @else {
+        <!-- VISTA FINAL: paneles laterales y el centro libre para el 3D -->
+        <section class="hud-enter relative z-10 mx-auto mt-6 flex w-full max-w-7xl flex-col gap-6 px-6 pb-10">
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/50 bg-slate-950/90 p-4 font-mono text-xs shadow-2xl backdrop-blur-xl">
+            <div class="flex items-center gap-3">
+              <span class="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400"></span>
+              <span class="font-bold tracking-wider text-emerald-400">
+                MATRIZ ESTABLECIDA: {{ state.chosenOption('architectureType')?.name }}
+              </span>
             </div>
-
-            <div class="bg-slate-950/90 backdrop-blur-2xl border border-orange-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(249,115,22,0.2)]">
-              <span class="text-[10px] font-mono text-orange-400 uppercase tracking-widest font-bold">02. Seguridad & Auth</span>
-              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.auth | uppercase }}</h3>
-              <p class="text-xs text-slate-300 mt-2 leading-relaxed">Gestión de identidad cifrada con tokens JWT y sesiones seguras.</p>
-            </div>
+            <button
+              type="button"
+              class="cursor-pointer rounded-xl border border-emerald-500/40 bg-slate-900 px-4 py-1.5 text-xs font-bold text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-colors hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime-300"
+              (click)="state.reset()"
+            >
+              ⚙️ RECONFIGURAR STACK
+            </button>
           </div>
 
-          <!-- Centro: Vacío libre para apreciar el Canvas 3D de fondo en pantalla completa -->
-          <div class="hidden lg:block pointer-events-none"></div>
-
-          <!-- Columna Derecha: Paneles 03 y 04 (Rotados en Y negativo) -->
-          <div class="flex flex-col gap-5 transform transition-transform duration-500 hover:scale-102" style="transform: rotateY(-8deg) translateZ(20px);">
-            <div class="bg-slate-950/90 backdrop-blur-2xl border border-rose-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(244,63,94,0.2)]">
-              <span class="text-[10px] font-mono text-rose-400 uppercase tracking-widest font-bold">03. Backend Core</span>
-              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.backend | uppercase }}</h3>
-              <p class="text-xs text-slate-300 mt-2 leading-relaxed">Servidor modular basado en TypeScript con inyección de dependencias.</p>
+          <div class="grid grid-cols-1 items-start gap-8 pt-2 lg:grid-cols-3">
+            <div class="flex flex-col gap-5">
+              @for (panel of leftPanels; track panel.index) {
+                @if (state.chosenOption(panel.category); as option) {
+                  <article class="rounded-2xl border bg-slate-950/90 p-5 backdrop-blur-2xl" [class]="panel.border + ' ' + panel.glow">
+                    <span class="font-mono text-[10px] font-bold uppercase tracking-widest" [class]="panel.text">
+                      {{ panel.index }}. {{ panel.label }}
+                    </span>
+                    <h3 class="mt-1 text-base font-black tracking-wide text-white">{{ option.name }}</h3>
+                    <p class="mt-2 text-xs leading-relaxed text-slate-300">{{ option.description }}</p>
+                  </article>
+                }
+              }
             </div>
 
-            <div class="bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/40 p-5 rounded-2xl shadow-[0_0_25px_rgba(16,185,129,0.2)]">
-              <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">04. Almacenamiento & Cloud</span>
-              <h3 class="font-black text-white text-base mt-1 tracking-wide">{{ selectedArchitecture?.database | uppercase }}</h3>
-              <p class="text-xs text-slate-300 mt-2 leading-relaxed">Base de datos transaccional con sincronización de datos en tiempo real.</p>
+            <!-- Centro libre para ver el 3D -->
+            <div class="pointer-events-none hidden lg:block"></div>
+
+            <div class="flex flex-col gap-5">
+              @for (panel of rightPanels; track panel.index) {
+                @if (state.chosenOption(panel.category); as option) {
+                  <article class="rounded-2xl border bg-slate-950/90 p-5 backdrop-blur-2xl" [class]="panel.border + ' ' + panel.glow">
+                    <span class="font-mono text-[10px] font-bold uppercase tracking-widest" [class]="panel.text">
+                      {{ panel.index }}. {{ panel.label }}
+                    </span>
+                    <h3 class="mt-1 text-base font-black tracking-wide text-white">{{ option.name }}</h3>
+                    <p class="mt-2 text-xs leading-relaxed text-slate-300">{{ option.description }}</p>
+                  </article>
+                }
+              }
             </div>
           </div>
-
-        </div>
-
-      </section>
-
+        </section>
+      }
     </main>
   `
 })
 export class App {
-  title = 'arch-isometric-sim';
-  activeWizardStep = 0;
+  protected readonly state = inject(ArchitectureStateService);
 
-  currentSelection: ArchitectureSelection = {
-    architectureType: 'monorepo',
-    frontend: 'angular',
-    backend: 'nestjs',
-    database: 'supabase_postgres',
-    auth: 'aws_cognito',
-    devops: 'docker_k8s'
-  };
+  protected readonly leftPanels: HudPanel[] = [
+    {
+      index: '01',
+      label: 'Capa Cliente',
+      category: 'frontend',
+      border: 'border-emerald-500/40',
+      glow: 'shadow-[0_0_25px_rgba(16,185,129,0.2)]',
+      text: 'text-emerald-400'
+    },
+    {
+      index: '02',
+      label: 'Seguridad & Auth',
+      category: 'auth',
+      border: 'border-orange-500/40',
+      glow: 'shadow-[0_0_25px_rgba(249,115,22,0.2)]',
+      text: 'text-orange-400'
+    }
+  ];
 
-  selectedArchitecture: ArchitectureSelection | null = null;
-  isBuilt = false;
-
-  onStepChange(step: number): void {
-    this.activeWizardStep = step;
-  }
-
-  onSelectionUpdate(selection: ArchitectureSelection): void {
-    this.currentSelection = { ...selection };
-  }
-
-  onArchitectureSelected(selection: ArchitectureSelection): void {
-    this.selectedArchitecture = selection;
-    this.isBuilt = true;
-  }
-
-  resetBuilder(): void {
-    this.isBuilt = false;
-    this.activeWizardStep = 0;
-  }
+  protected readonly rightPanels: HudPanel[] = [
+    {
+      index: '03',
+      label: 'Backend Core',
+      category: 'backend',
+      border: 'border-rose-500/40',
+      glow: 'shadow-[0_0_25px_rgba(244,63,94,0.2)]',
+      text: 'text-rose-400'
+    },
+    {
+      index: '04',
+      label: 'Almacenamiento & Cloud',
+      category: 'database',
+      border: 'border-emerald-500/40',
+      glow: 'shadow-[0_0_25px_rgba(16,185,129,0.2)]',
+      text: 'text-emerald-400'
+    },
+    {
+      index: '05',
+      label: 'Contenedores & Deploy',
+      category: 'devops',
+      border: 'border-sky-500/40',
+      glow: 'shadow-[0_0_25px_rgba(14,165,233,0.2)]',
+      text: 'text-sky-400'
+    }
+  ];
 }
