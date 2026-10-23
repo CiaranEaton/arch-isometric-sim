@@ -1,1 +1,91 @@
-<p>architecture-wizard works!</p>
+<section class="sb-panel" aria-label="Configurador de stack">
+  <p class="sb-live" aria-live="polite">
+    Paso {{ state.step() + 1 }} de {{ state.steps().length }}: {{ state.activeStep().title }}
+  </p>
+
+  <nav class="sb-stepper" aria-label="Pasos de la configuración">
+    <ol class="sb-steps">
+      @for (s of state.steps(); track s.category; let i = $index) {
+        <li>
+          <button
+            type="button"
+            class="sb-step"
+            [class.is-current]="i === state.step()"
+            [class.is-done]="i < state.step()"
+            [attr.aria-current]="i === state.step() ? 'step' : null"
+            [disabled]="i > state.reached()"
+            [style.--layer]="layerColor(s.layer)"
+            (click)="state.goToStep(i)"
+          >
+            <span class="sb-step-num" aria-hidden="true">{{ i + 1 }}</span>
+            <span class="sb-step-name">{{ s.menuTitle }}</span>
+          </button>
+        </li>
+      }
+    </ol>
+  </nav>
+
+  @for (step of [state.activeStep()]; track step.category) {
+    <div class="sb-body" [class.from-left]="state.direction() === -1">
+      <header class="sb-head">
+        <h2 class="sb-title">{{ step.title }}</h2>
+        <p class="sb-subtitle">{{ step.subtitle }}</p>
+      </header>
+
+      <div
+        class="sb-options"
+        role="radiogroup"
+        [attr.aria-label]="step.title"
+        (keydown)="onRadioKeydown($event)"
+      >
+        @for (option of step.options; track option.id) {
+          <button
+            type="button"
+            role="radio"
+            class="sb-option"
+            [class.is-selected]="state.selectedId() === option.id"
+            [attr.aria-checked]="state.selectedId() === option.id"
+            [attr.tabindex]="state.selectedId() === option.id ? 0 : -1"
+            (click)="state.select(option.id)"
+          >
+            <span class="sb-option-icon">
+              <img [src]="option.iconUrl" alt="" width="24" height="24" loading="lazy" (error)="onIconError($event)" />
+            </span>
+            <span class="sb-option-name">{{ option.name }}</span>
+            @if (state.recommendedId() === option.id) {
+              <span class="sb-badge">Recomendado</span>
+            }
+            <span class="sb-radio" aria-hidden="true"></span>
+          </button>
+        }
+      </div>
+
+      <div class="sb-detail" tabindex="0" role="region" aria-label="Detalle de la opción seleccionada">
+        @for (option of [state.selectedOption()]; track option.id) {
+          <div class="sb-detail-inner">
+            <p class="sb-desc">{{ option.description }}</p>
+
+            @if (state.fits()[option.id]?.reason; as reason) {
+              <p class="sb-reason"><strong>Por qué encaja:</strong> {{ reason }}</p>
+            }
+
+            <ul class="sb-tags">
+              @for (tag of option.tags; track tag) {
+                <li class="sb-tag">{{ tag }}</li>
+              }
+            </ul>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <footer class="sb-actions">
+    <button type="button" class="sb-btn sb-btn-ghost" [disabled]="state.step() === 0" (click)="state.back()">
+      Volver
+    </button>
+    <button type="button" class="sb-btn sb-btn-primary" (click)="state.next()">
+      {{ state.isLastStep() ? 'Ver resultado' : 'Continuar' }}
+    </button>
+  </footer>
+</section>

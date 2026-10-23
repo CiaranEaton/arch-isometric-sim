@@ -361,7 +361,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     });
 
     /* 2) Plataforma (tipo de sistema) */
-    const platformType = step === 0 && !built ? highlighted : selection.architectureType;
+    const platformType = step === 0 && !built ? highlighted : (selection['system'] ?? 'default');
     if (platformType !== this.platformType) {
       this.buildPlatform(platformType);
     }

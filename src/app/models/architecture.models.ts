@@ -1,229 +1,520 @@
-export interface ArchitectureSelection {
-  architectureType: string;
-  frontend: string;
-  backend: string;
-  database: string;
-  auth: string;
-  devops: string;
-}
+/* ───────────────────────── Tipos ───────────────────────── */
 
-/** Categorías que se dibujan como cubos/figuras en el 3D (todas menos el tipo de sistema). */
-export type NodeCategory = Exclude<keyof ArchitectureSelection, 'architectureType'>;
+/** Capas de la línea de ensamble 3D (izquierda → derecha). `workspace` no tiene slot: es la plataforma base. */
+export type LayerId = 'client' | 'frontend' | 'auth' | 'backend' | 'data' | 'infra' | 'workspace';
+
+export type StepCategory =
+  | 'project'
+  | 'system'
+  | 'frontend'
+  | 'styling'
+  | 'backend'
+  | 'database'
+  | 'auth'
+  | 'devops'
+  | 'cicd';
+
+export type ProjectTypeId = 'frontend' | 'backend' | 'fullstack-simple' | 'fullstack-enterprise';
+
+/** categoría → id de opción elegida. El tipo de proyecto vive aparte (`routeId` en el servicio). */
+export type ArchitectureSelection = Record<string, string>;
+
+/** @deprecated Temporal: el canvas viejo aún lo importa. Se elimina en la fase del canvas. */
+export type NodeCategory = string;
+
+/**
+ * Regla de recomendación. Se cumple si, para CADA clave de `when`, el valor actual
+ * está en la lista. Claves válidas: `route` (tipo de proyecto) o cualquier categoría ya elegida.
+ */
+export interface Affinity {
+  when: Record<string, string[]>;
+  score: number;
+  reason: string;
+}
 
 export interface StepOption {
   id: string;
   name: string;
   description: string;
-  badge?: string;
-  recommendation?: string;
   tags: string[];
   iconUrl: string;
+  affinities?: Affinity[];
 }
 
-export interface WizardStep {
-  id: number;
-  /** Título corto estilo menú Xbox. */
+export interface StepDef {
+  layer: LayerId;
+  /** Nombre corto para el stepper. */
   menuTitle: string;
   title: string;
   subtitle: string;
-  category: keyof ArchitectureSelection;
+}
+
+/** Paso ya resuelto (con sus opciones) que consumen el wizard y el 3D. */
+export interface WizardStep extends StepDef {
+  category: StepCategory;
   options: StepOption[];
 }
 
-export type ShapeKind = 'box' | 'octa' | 'tetra' | 'icosa' | 'dodeca' | 'cylinder' | 'cone' | 'torus';
-
-/** Cómo se ve cada opción dentro del 3D. */
-export interface OptionVisual {
-  color: number;
-  shape: ShapeKind;
-  /** Texto corto que flota sobre la figura. */
-  short: string;
+export interface RouteStep {
+  category: Exclude<StepCategory, 'project'>;
+  /** Ids del catálogo, en el orden en que se muestran. */
+  options: string[];
 }
 
-export const DEFAULT_SELECTION: ArchitectureSelection = {
-  architectureType: 'monorepo',
-  frontend: 'angular',
-  backend: 'nestjs',
-  database: 'supabase_postgres',
-  auth: 'aws_cognito',
-  devops: 'docker_k8s'
-};
+export interface ProjectRoute extends StepOption {
+  id: ProjectTypeId;
+  steps: RouteStep[];
+}
 
-export const OPTION_VISUALS: Record<string, OptionVisual> = {
-  monorepo: { color: 0x10b981, shape: 'box', short: 'MONOREPO' },
-  microservices: { color: 0xa78bfa, shape: 'box', short: 'MICROSERVICIOS' },
+export interface LayerMeta {
+  id: LayerId;
+  label: string;
+  color: number;
+}
 
-  angular: { color: 0xdd0031, shape: 'box', short: 'ANGULAR' },
-  vue: { color: 0x42b883, shape: 'tetra', short: 'VUE' },
-  react: { color: 0x61dafb, shape: 'icosa', short: 'REACT' },
+const icon = (name: string, variant = 'original'): string =>
+  `https://cdn.jsdelivr.net/gh/devicons/devicon/icons/${name}/${name}-${variant}.svg`;
 
-  nestjs: { color: 0xe0234e, shape: 'dodeca', short: 'NESTJS' },
-  nodejs_express: { color: 0x84cc16, shape: 'octa', short: 'EXPRESS' },
+/* ───────────────────────── Pasos (títulos y capa) ───────────────────────── */
 
-  supabase_postgres: { color: 0x3ecf8e, shape: 'cylinder', short: 'POSTGRES' },
-  mongodb: { color: 0x47a248, shape: 'cone', short: 'MONGODB' },
-
-  aws_cognito: { color: 0xff9900, shape: 'torus', short: 'COGNITO' },
-  supabase_auth: { color: 0x22d3ee, shape: 'octa', short: 'SUPABASE AUTH' },
-
-  docker_k8s: { color: 0x2496ed, shape: 'box', short: 'DOCKER + K8S' }
-};
-
-export const ARCHITECTURE_STEPS: WizardStep[] = [
-  {
-    id: 0,
-    menuTitle: 'Sistema',
-    title: '1. Tipo de Sistema (El Gabinete & Estructura)',
-    subtitle: 'Selecciona cómo se organizará el código y los módulos de tu proyecto.',
-    category: 'architectureType',
-    options: [
-      {
-        id: 'monorepo',
-        name: 'Monorepo Integrado (Nx / Turborepo)',
-        badge: 'Recomendado',
-        description: 'Frontend y Backend comparten tipos de TypeScript, DTOs y librerías comunes en un solo repositorio.',
-        recommendation: 'Ideal para combinar Angular + NestJS compartiendo contratos API directamente sin duplicar interfaces.',
-        tags: ['TypeScript', 'Nx Monorepo', 'Shared DTOs'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg'
-      },
-      {
-        id: 'microservices',
-        name: 'Microservicios Desacoplados',
-        description: 'Múltiples repositorios independientes o servicios aislados comunicados mediante mensajería o gRPC.',
-        recommendation: 'Recomendado cuando diferentes equipos manejan servicios independientes con despliegues separados.',
-        tags: ['Docker', 'Event-Driven', 'gRPC / REST'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/docker/docker-original.svg'
-      }
-    ]
+export const STEP_DEFS: Record<StepCategory, StepDef> = {
+  project: {
+    layer: 'workspace',
+    menuTitle: 'Proyecto',
+    title: 'Tipo de proyecto',
+    subtitle: 'Define el alcance: cada tipo activa sus propios pasos.'
   },
-  {
-    id: 1,
+  system: {
+    layer: 'workspace',
+    menuTitle: 'Estructura',
+    title: 'Estructura del código',
+    subtitle: 'Cómo se organizan repositorios, apps y librerías compartidas.'
+  },
+  frontend: {
+    layer: 'frontend',
     menuTitle: 'Frontend',
-    title: '2. Frontend & Capa Visual (La Placa Madre)',
-    subtitle: 'Selecciona el framework cliente para construir la interfaz y lógica gráfica.',
-    category: 'frontend',
-    options: [
-      {
-        id: 'angular',
-        name: 'Angular (Standalone Components)',
-        badge: 'Core Match',
-        description: 'Framework robusto, enfocado en TypeScript estricto, arquitectura modular e inyección de dependencias.',
-        recommendation: 'Nuestra opción nativa para integrar Three.js con tipado estricto y excelente desempeño.',
-        tags: ['Angular 19+', 'RxJS', 'Tailwind CSS'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/angular/angular-original.svg'
-      },
-      {
-        id: 'vue',
-        name: 'Vue.js / Nuxt',
-        description: 'Procesamiento de interfaz ultrarrápido y reactivo con sintaxis limpia.',
-        recommendation: 'Excelente opción si buscas ligereza y curva de aprendizaje muy rápida.',
-        tags: ['Vue 3', 'Vite', 'Pinia'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/vuejs/vuejs-original.svg'
-      },
-      {
-        id: 'react',
-        name: 'React.js / Next.js',
-        description: 'Ecosistema masivo basado en componentes funcionales y JSX.',
-        recommendation: 'Muy popular para ecosistemas masivos de librerías de terceros.',
-        tags: ['React 19', 'Zustand', 'JSX'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg'
-      }
-    ]
+    title: 'Frontend',
+    subtitle: 'Framework cliente para construir la interfaz.'
   },
-  {
-    id: 2,
+  styling: {
+    layer: 'frontend',
+    menuTitle: 'Estilos',
+    title: 'Estilos y UI',
+    subtitle: 'Cómo se construye y mantiene la capa visual.'
+  },
+  backend: {
+    layer: 'backend',
     menuTitle: 'Backend',
-    title: '3. Backend & Lógica (El Procesador)',
-    subtitle: 'Selecciona el motor servidor para manejar endpoints, reglas de negocio y sockets.',
-    category: 'backend',
-    options: [
-      {
-        id: 'nestjs',
-        name: 'NestJS (Node.js Enterprise Framework)',
-        badge: 'Perfect Combo',
-        description: 'Basado en TypeScript, decoradores e inyección de dependencias idéntica a la arquitectura de Angular.',
-        recommendation: 'Al usar Angular en Frontend y NestJS en Backend, el cambio de contexto entre client/server es cero.',
-        tags: ['TypeScript', 'Express/Fastify', 'TypeORM/Prisma'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nestjs/nestjs-original.svg'
-      },
-      {
-        id: 'nodejs_express',
-        name: 'Node.js + Express / Fastify',
-        description: 'Servidor HTTP liviano, minimalista y totalmente personalizable.',
-        recommendation: 'Ideal para microservicios pequeños o prototipado rápido.',
-        tags: ['Node.js', 'Express', 'JavaScript/TS'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg'
-      }
-    ]
+    title: 'Backend',
+    subtitle: 'Motor del servidor: endpoints, reglas de negocio y tiempo real.'
   },
-  {
-    id: 3,
+  database: {
+    layer: 'data',
     menuTitle: 'Datos',
-    title: '4. Almacenamiento & Estado (Memoria & ROM)',
-    subtitle: 'Dónde residirán los datos transaccionales, relacionales o en tiempo real.',
-    category: 'database',
-    options: [
-      {
-        id: 'supabase_postgres',
-        name: 'Supabase + PostgreSQL',
-        badge: 'Top Performance',
-        description: 'Base de datos relacional robusta con soporte nativo de SQL, Webhooks y llamadas en tiempo real.',
-        recommendation: 'Te permite usar ORMs como Prisma o TypeORM para mantener tipado de datos con TypeScript.',
-        tags: ['PostgreSQL', 'Prisma', 'Realtime Subscriptions'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg'
-      },
-      {
-        id: 'mongodb',
-        name: 'MongoDB + Redis Cache',
-        description: 'Base de datos NoSQL orientada a documentos flexibles, respaldada con caché en memoria ultrarrápida.',
-        recommendation: 'Recomendada si la estructura de tus datos cambia constantemente sin esquemas fijos.',
-        tags: ['NoSQL', 'Mongoose', 'Redis'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mongodb/mongodb-original.svg'
-      }
-    ]
+    title: 'Base de datos',
+    subtitle: 'Dónde viven los datos transaccionales y su modelo.'
   },
-  {
-    id: 4,
-    menuTitle: 'Seguridad',
-    title: '5. Autenticación & Seguridad (Fuente de Poder)',
-    subtitle: 'Cómo protegerás tus APIs, validarás tokens y gestionarás usuarios.',
-    category: 'auth',
-    options: [
-      {
-        id: 'aws_cognito',
-        name: 'AWS Cognito',
-        badge: 'Enterprise',
-        description: 'Servicio gestionado por Amazon para Auth, OAuth2, MFA y gestión segura de sesiones a escala global.',
-        recommendation: 'Ideal para arquitecturas de grado empresarial sin preocuparte por almacenar credenciales.',
-        tags: ['AWS', 'OAuth2', 'JWT / MFA'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/amazonwebservices/amazonwebservices-original-wordmark.svg'
-      },
-      {
-        id: 'supabase_auth',
-        name: 'Supabase Auth / Custom JWT',
-        description: 'Manejo de usuarios integrado directamente con la base de datos o mediante tokens JWT propios.',
-        recommendation: 'Rápido de configurar y muy amigable con proyectos Monorepo.',
-        tags: ['JWT', 'OAuth', 'Row Level Security'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg'
-      }
-    ]
+  auth: {
+    layer: 'auth',
+    menuTitle: 'Acceso',
+    title: 'Autenticación',
+    subtitle: 'Cómo se identifican usuarios y se protegen las APIs.'
   },
-  {
-    id: 5,
+  devops: {
+    layer: 'infra',
     menuTitle: 'Deploy',
-    title: '6. Contenedores & Deploy (Gabinete & Enfriamiento)',
-    subtitle: 'Empaquetado, infraestructura y orquestación de servicios en producción.',
-    category: 'devops',
-    options: [
-      {
-        id: 'docker_k8s',
-        name: 'Docker + Kubernetes + Vercel',
-        badge: 'Full Cloud',
-        description: 'Frontend desplegado en Vercel Edge; backend empaquetado en contenedores Docker orquestados.',
-        recommendation: 'Sube tu app cliente a Vercel con CI/CD automático y mantén tus microservicios aislados en Docker.',
-        tags: ['Docker Compose', 'Vercel CI/CD', 'Kubernetes'],
-        iconUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/docker/docker-original.svg'
-      }
+    title: 'Despliegue e infraestructura',
+    subtitle: 'Dónde y cómo corre tu proyecto en producción.'
+  },
+  cicd: {
+    layer: 'infra',
+    menuTitle: 'CI/CD',
+    title: 'Integración y entrega continua',
+    subtitle: 'Cómo se prueba y publica cada cambio.'
+  }
+};
+
+/* ───────────────────────── Catálogo de opciones ─────────────────────────
+ * Cada opción se define UNA vez; las rutas la referencian por id.
+ * Las `affinities` calculan la recomendación según el tipo de proyecto y las
+ * elecciones previas: gana la opción con mayor puntaje (solo si es único).
+ */
+
+const CATALOG_DATA: Record<string, Omit<StepOption, 'id'>> = {
+  /* — Estructura — */
+  nx_monorepo: {
+    name: 'Monorepo con Nx',
+    description: 'Apps y librerías en un solo repositorio, con grafo de dependencias, caché de builds y ejecución solo de lo afectado.',
+    tags: ['Nx', 'Libs compartidas', 'Affected builds'],
+    iconUrl: icon('nx'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 2, reason: 'Comparte tipos y contratos entre frontend y backend sin duplicarlos.' }
+    ]
+  },
+  turborepo: {
+    name: 'Monorepo con Turborepo + pnpm',
+    description: 'Workspaces de pnpm con pipelines cacheados; más ligero y con menos convención que Nx.',
+    tags: ['pnpm', 'Turborepo', 'Remote cache'],
+    iconUrl: icon('typescript'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 1, reason: 'Más ligero que Nx si tu equipo ya usa pnpm workspaces.' }
+    ]
+  },
+  polyrepo: {
+    name: 'Repos independientes',
+    description: 'Un repositorio por servicio o app, con versionado y despliegue propios para cada equipo.',
+    tags: ['Multi-repo', 'Contratos versionados', 'Equipos autónomos'],
+    iconUrl: icon('git')
+  },
+
+  /* — Frontend — */
+  angular: {
+    name: 'Angular',
+    description: 'Framework completo con TypeScript estricto, inyección de dependencias y estructura opinada.',
+    tags: ['TypeScript', 'RxJS', 'Signals'],
+    iconUrl: icon('angular'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 2, reason: 'Estructura opinada y tipado estricto que escalan bien en equipos grandes.' },
+      { when: { system: ['nx_monorepo'] }, score: 1, reason: 'Nx tiene soporte de primera clase para Angular.' }
+    ]
+  },
+  react: {
+    name: 'React / Next.js',
+    description: 'Biblioteca de componentes con el ecosistema más grande; Next.js añade routing y SSR.',
+    tags: ['React', 'Next.js', 'JSX'],
+    iconUrl: icon('react'),
+    affinities: [
+      { when: { route: ['frontend', 'fullstack-simple'] }, score: 2, reason: 'Ecosistema más amplio y la mayor cantidad de documentación y librerías.' },
+      { when: { system: ['turborepo'] }, score: 1, reason: 'Encaja con Turborepo, muy usado en proyectos React/Next.' }
+    ]
+  },
+  vue: {
+    name: 'Vue / Nuxt',
+    description: 'Sintaxis clara y curva de aprendizaje suave; Nuxt aporta routing y SSR.',
+    tags: ['Vue 3', 'Vite', 'Pinia'],
+    iconUrl: icon('vuejs'),
+    affinities: [{ when: { route: ['frontend'] }, score: 1, reason: 'Curva de aprendizaje suave y poca configuración inicial.' }]
+  },
+
+  /* — Estilos — */
+  tailwind: {
+    name: 'Tailwind CSS',
+    description: 'Utilidades atómicas: estilos junto al marcado, sin CSS muerto y con un sistema de diseño consistente.',
+    tags: ['Utility-first', 'JIT', 'Design tokens'],
+    iconUrl: icon('tailwindcss'),
+    affinities: [
+      { when: { route: ['frontend'] }, score: 2, reason: 'Estilos consistentes sin CSS muerto y sin depender de un kit de componentes.' }
+    ]
+  },
+  component_lib: {
+    name: 'Librería de componentes',
+    description: 'Material, PrimeNG o shadcn/ui: componentes accesibles y probados, listos para usar.',
+    tags: ['Accesibilidad', 'Theming', 'Componentes listos'],
+    iconUrl: icon('materialui'),
+    affinities: [
+      { when: { frontend: ['angular'] }, score: 3, reason: 'Angular Material o PrimeNG dan componentes accesibles listos para usar.' }
+    ]
+  },
+  css_scss: {
+    name: 'SCSS / CSS Modules',
+    description: 'Hojas de estilo propias con variables y módulos: máximo control, más trabajo de base.',
+    tags: ['SCSS', 'CSS Modules', 'Sin dependencias'],
+    iconUrl: icon('sass')
+  },
+
+  /* — Backend — */
+  nestjs: {
+    name: 'NestJS',
+    description: 'Framework Node con TypeScript, módulos, decoradores e inyección de dependencias.',
+    tags: ['TypeScript', 'Módulos + DI', 'OpenAPI'],
+    iconUrl: icon('nestjs'),
+    affinities: [
+      { when: { frontend: ['angular'] }, score: 3, reason: 'Comparte filosofía con Angular (módulos, DI, decoradores): menos cambio de contexto.' },
+      { when: { route: ['fullstack-enterprise', 'backend'] }, score: 2, reason: 'Estructura modular y testeable para APIs que van a crecer.' }
+    ]
+  },
+  express: {
+    name: 'Node.js + Express / Fastify',
+    description: 'Servidor HTTP minimalista y flexible; tú decides estructura y librerías.',
+    tags: ['Node.js', 'Express', 'Fastify'],
+    iconUrl: icon('express'),
+    affinities: [
+      { when: { route: ['fullstack-simple'] }, score: 2, reason: 'Poca ceremonia y TypeScript de punta a punta para arrancar rápido.' }
+    ]
+  },
+  fastapi: {
+    name: 'Python + FastAPI',
+    description: 'API asíncrona con validación por tipos y documentación OpenAPI automática.',
+    tags: ['Python', 'Pydantic', 'OpenAPI'],
+    iconUrl: icon('fastapi'),
+    affinities: [
+      { when: { route: ['backend'] }, score: 1, reason: 'Validación y documentación OpenAPI automáticas con muy poco código.' }
+    ]
+  },
+
+  /* — Datos — */
+  supabase_postgres: {
+    name: 'Supabase (PostgreSQL)',
+    description: 'Postgres gestionado con API REST, realtime, storage y Row Level Security.',
+    tags: ['PostgreSQL', 'Realtime', 'RLS'],
+    iconUrl: icon('supabase'),
+    affinities: [
+      { when: { route: ['fullstack-simple'] }, score: 3, reason: 'Base, auth, storage y realtime incluidos: lo más rápido para arrancar.' }
+    ]
+  },
+  postgres_managed: {
+    name: 'PostgreSQL gestionado',
+    description: 'Postgres en RDS, Cloud SQL o similar: SQL estándar, réplicas y backups bajo tu control.',
+    tags: ['PostgreSQL', 'Prisma / TypeORM', 'Réplicas'],
+    iconUrl: icon('postgresql'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 3, reason: 'Control de backups, réplicas y red sin depender de un BaaS.' },
+      { when: { route: ['backend'] }, score: 2, reason: 'Modelo relacional con SQL estándar y migraciones versionadas.' }
+    ]
+  },
+  mongodb: {
+    name: 'MongoDB (+ Redis)',
+    description: 'Documentos flexibles sin esquema fijo, con Redis opcional como caché.',
+    tags: ['NoSQL', 'Mongoose', 'Redis'],
+    iconUrl: icon('mongodb'),
+    affinities: [{ when: { backend: ['express'] }, score: 1, reason: 'Esquema flexible para prototipar sin migraciones.' }]
+  },
+
+  /* — Auth — */
+  supabase_auth: {
+    name: 'Supabase Auth',
+    description: 'Usuarios, sesiones y OAuth integrados con la base de datos y sus políticas RLS.',
+    tags: ['JWT', 'OAuth', 'RLS'],
+    iconUrl: icon('supabase'),
+    affinities: [
+      { when: { database: ['supabase_postgres'] }, score: 3, reason: 'Ya viene con tu proyecto de Supabase y se integra con sus políticas RLS.' }
+    ]
+  },
+  cognito: {
+    name: 'AWS Cognito',
+    description: 'Servicio gestionado con OAuth2, MFA y federación SAML/OIDC.',
+    tags: ['AWS', 'OAuth2', 'MFA'],
+    iconUrl: icon('amazonwebservices', 'original-wordmark'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 2, reason: 'Gestionado, con MFA y federación empresarial (SAML/OIDC).' }
+    ]
+  },
+  auth0: {
+    name: 'Auth0 / Clerk',
+    description: 'Identidad como servicio: login social, MFA y gestión de usuarios sin construir nada.',
+    tags: ['OIDC', 'Login social', 'MFA'],
+    iconUrl: icon('auth0'),
+    affinities: [{ when: { route: ['fullstack-simple'] }, score: 1, reason: 'Login social y MFA listos si no usas Supabase.' }]
+  },
+  jwt_custom: {
+    name: 'JWT propio',
+    description: 'Login y tokens implementados en tu API (Passport o jose): control total, más responsabilidad.',
+    tags: ['JWT', 'Passport', 'Refresh tokens'],
+    iconUrl: icon('nodejs'),
+    affinities: [
+      { when: { route: ['backend'] }, score: 2, reason: 'Una API aislada no necesita proveedor externo: control total del flujo.' }
+    ]
+  },
+
+  /* — Deploy — */
+  vercel: {
+    name: 'Vercel / Netlify',
+    description: 'Deploy desde Git con CDN global, previews por rama y funciones serverless.',
+    tags: ['Edge CDN', 'Preview deploys', 'Serverless'],
+    iconUrl: icon('vercel'),
+    affinities: [
+      { when: { route: ['frontend'] }, score: 3, reason: 'Deploy desde Git y CDN global sin servidores que mantener.' },
+      { when: { route: ['fullstack-simple'] }, score: 2, reason: 'Frontend en edge y API como funciones serverless, con previews por rama.' }
+    ]
+  },
+  static_pages: {
+    name: 'GitHub / Cloudflare Pages',
+    description: 'Hosting estático gratuito y simple para sitios sin lógica de servidor.',
+    tags: ['Estático', 'CDN', 'Gratis'],
+    iconUrl: icon('github'),
+    affinities: [{ when: { route: ['frontend'] }, score: 1, reason: 'Gratis y suficiente si tu sitio no necesita funciones de servidor.' }]
+  },
+  railway: {
+    name: 'Railway / Render',
+    description: 'PaaS: despliega el backend desde Git, con base de datos y variables en un panel.',
+    tags: ['PaaS', 'Deploy desde Git', 'Escala simple'],
+    iconUrl: icon('nodejs'),
+    affinities: [
+      { when: { route: ['fullstack-simple'] }, score: 1, reason: 'Backend como servicio persistente con variables y base de datos en un panel.' },
+      { when: { route: ['fullstack-simple'], backend: ['nestjs'] }, score: 2, reason: 'NestJS corre mejor como servicio persistente que como función serverless.' },
+      { when: { route: ['backend'] }, score: 2, reason: 'Despliega tu API desde Git sin administrar servidores.' }
+    ]
+  },
+  docker_compose: {
+    name: 'Docker Compose en VPS',
+    description: 'Contenedores orquestados en un servidor propio: barato y reproducible.',
+    tags: ['Docker', 'Compose', 'Reverse proxy'],
+    iconUrl: icon('docker'),
+    affinities: [
+      { when: { route: ['backend'] }, score: 1, reason: 'Reproducible y barato en un VPS cuando aún no necesitas orquestación.' }
+    ]
+  },
+  docker_k8s: {
+    name: 'Docker + Kubernetes',
+    description: 'Contenedores con escalado por servicio, despliegues graduales y entornos aislados.',
+    tags: ['Docker', 'Kubernetes', 'Helm'],
+    iconUrl: icon('kubernetes'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 3, reason: 'Escala por servicio, con despliegues graduales y entornos aislados.' }
+    ]
+  },
+
+  /* — CI/CD — */
+  github_actions: {
+    name: 'GitHub Actions',
+    description: 'Pipelines versionados con el código: tests, build de imágenes y deploy en cada PR.',
+    tags: ['CI/CD', 'Matrix builds', 'Caché'],
+    iconUrl: icon('githubactions'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 2, reason: 'Pipelines versionados junto al código, con caché y builds solo de lo afectado.' }
+    ]
+  },
+  gitlab_ci: {
+    name: 'GitLab CI/CD',
+    description: 'Pipelines y registro de contenedores integrados en GitLab.',
+    tags: ['CI/CD', 'Runners', 'Container Registry'],
+    iconUrl: icon('gitlab'),
+    affinities: [{ when: { route: ['fullstack-enterprise'] }, score: 1, reason: 'Ideal si tu equipo ya aloja el código en GitLab.' }]
+  }
+};
+
+export const OPTION_CATALOG: Record<string, StepOption> = Object.fromEntries(
+  Object.entries(CATALOG_DATA).map(([id, option]) => [id, { id, ...option }])
+);
+
+/* ───────────────────────── Rutas: tipo de proyecto → pasos → opciones ───────────────────────── */
+
+export const ROUTES: ProjectRoute[] = [
+  {
+    id: 'frontend',
+    name: 'Solo Frontend',
+    description: 'Interfaz web o SPA que consume APIs de terceros o contenido estático. Sin backend ni base de datos propios.',
+    tags: ['SPA / sitio', 'Hosting estático', 'Sin backend'],
+    iconUrl: icon('html5'),
+    steps: [
+      { category: 'frontend', options: ['react', 'vue', 'angular'] },
+      { category: 'styling', options: ['tailwind', 'component_lib', 'css_scss'] },
+      { category: 'devops', options: ['vercel', 'static_pages'] }
+    ]
+  },
+  {
+    id: 'backend',
+    name: 'Solo Backend',
+    description: 'API o servicio sin interfaz: endpoints, datos y autenticación listos para que otros clientes los consuman.',
+    tags: ['API REST', 'Datos', 'Auth'],
+    iconUrl: icon('nodejs'),
+    steps: [
+      { category: 'backend', options: ['nestjs', 'express', 'fastapi'] },
+      { category: 'database', options: ['postgres_managed', 'supabase_postgres', 'mongodb'] },
+      { category: 'auth', options: ['jwt_custom', 'auth0', 'cognito', 'supabase_auth'] },
+      { category: 'devops', options: ['railway', 'docker_compose', 'docker_k8s'] }
+    ]
+  },
+  {
+    id: 'fullstack-simple',
+    name: 'Full Stack simple',
+    description: 'Cliente + API + base de datos con el mínimo de piezas (ej. TypeScript + Node + Supabase). Ideal para MVPs.',
+    tags: ['MVP', 'TypeScript', 'Pocas piezas'],
+    iconUrl: icon('typescript'),
+    steps: [
+      { category: 'frontend', options: ['react', 'vue', 'angular'] },
+      { category: 'backend', options: ['express', 'nestjs'] },
+      { category: 'database', options: ['supabase_postgres', 'mongodb', 'postgres_managed'] },
+      { category: 'auth', options: ['supabase_auth', 'auth0', 'jwt_custom'] },
+      { category: 'devops', options: ['vercel', 'railway'] }
+    ]
+  },
+  {
+    id: 'fullstack-enterprise',
+    name: 'Full Stack Enterprise',
+    description: 'Monorepo, múltiples equipos y despliegue en contenedores: Nx, Angular + NestJS, Docker/Kubernetes y CI/CD.',
+    tags: ['Monorepo', 'Docker / K8s', 'CI/CD'],
+    iconUrl: icon('kubernetes'),
+    steps: [
+      { category: 'system', options: ['nx_monorepo', 'turborepo', 'polyrepo'] },
+      { category: 'frontend', options: ['angular', 'react'] },
+      { category: 'backend', options: ['nestjs', 'express', 'fastapi'] },
+      { category: 'database', options: ['postgres_managed', 'supabase_postgres', 'mongodb'] },
+      { category: 'auth', options: ['cognito', 'auth0', 'supabase_auth'] },
+      { category: 'devops', options: ['docker_k8s', 'docker_compose', 'railway'] },
+      { category: 'cicd', options: ['github_actions', 'gitlab_ci'] }
     ]
   }
 ];
+
+export const DEFAULT_ROUTE_ID: ProjectTypeId = 'fullstack-simple';
+
+/** Paso 0: las rutas son sus propias opciones. */
+export const PROJECT_STEP: WizardStep = {
+  ...STEP_DEFS.project,
+  category: 'project',
+  options: ROUTES.map(route => ({
+    id: route.id,
+    name: route.name,
+    description: route.description,
+    tags: route.tags,
+    iconUrl: route.iconUrl
+  }))
+};
+
+/* ───────────────────────── Capas (orden de la línea de ensamble) ───────────────────────── */
+
+export const LAYERS: LayerMeta[] = [
+  { id: 'client', label: 'Usuario', color: 0x94a3b8 },
+  { id: 'frontend', label: 'Frontend', color: 0x38bdf8 },
+  { id: 'auth', label: 'Auth / Gateway', color: 0xf59e0b },
+  { id: 'backend', label: 'Backend', color: 0xa78bfa },
+  { id: 'data', label: 'Datos', color: 0x34d399 },
+  { id: 'infra', label: 'Infra / Deploy', color: 0x64748b }
+];
+
+/** Color CSS (#rrggbb) de una capa; `workspace` usa el acento por defecto. */
+export const layerColor = (layer: LayerId): string =>
+  '#' + (LAYERS.find(l => l.id === layer)?.color ?? 0x34d399).toString(16).padStart(6, '0');
+
+/* ───────────────────────── Visuales 3D (TEMPORAL) ─────────────────────────
+ * Se mantienen para que el canvas actual siga compilando; en la fase del canvas
+ * se reemplazan por modelos low-poly reconocibles y color por capa.
+ */
+
+export type ShapeKind = 'box' | 'octa' | 'tetra' | 'icosa' | 'dodeca' | 'cylinder' | 'cone' | 'torus';
+
+export interface OptionVisual {
+  color: number;
+  shape: ShapeKind;
+  short: string;
+}
+
+export const OPTION_VISUALS: Record<string, OptionVisual> = {
+  nx_monorepo: { color: 0x10b981, shape: 'box', short: 'NX' },
+  turborepo: { color: 0x34d399, shape: 'box', short: 'TURBOREPO' },
+  polyrepo: { color: 0xa78bfa, shape: 'box', short: 'POLYREPO' },
+  angular: { color: 0xdd0031, shape: 'box', short: 'ANGULAR' },
+  react: { color: 0x61dafb, shape: 'icosa', short: 'REACT' },
+  vue: { color: 0x42b883, shape: 'tetra', short: 'VUE' },
+  tailwind: { color: 0x38bdf8, shape: 'octa', short: 'TAILWIND' },
+  component_lib: { color: 0x7c3aed, shape: 'octa', short: 'UI KIT' },
+  css_scss: { color: 0xcd6799, shape: 'octa', short: 'SCSS' },
+  nestjs: { color: 0xe0234e, shape: 'dodeca', short: 'NESTJS' },
+  express: { color: 0x84cc16, shape: 'octa', short: 'EXPRESS' },
+  fastapi: { color: 0x009688, shape: 'dodeca', short: 'FASTAPI' },
+  supabase_postgres: { color: 0x3ecf8e, shape: 'cylinder', short: 'SUPABASE' },
+  postgres_managed: { color: 0x336791, shape: 'cylinder', short: 'POSTGRES' },
+  mongodb: { color: 0x47a248, shape: 'cone', short: 'MONGODB' },
+  supabase_auth: { color: 0x22d3ee, shape: 'octa', short: 'SUPABASE AUTH' },
+  cognito: { color: 0xff9900, shape: 'torus', short: 'COGNITO' },
+  auth0: { color: 0xeb5424, shape: 'torus', short: 'AUTH0' },
+  jwt_custom: { color: 0xfacc15, shape: 'torus', short: 'JWT' },
+  vercel: { color: 0xe2e8f0, shape: 'box', short: 'VERCEL' },
+  static_pages: { color: 0x94a3b8, shape: 'box', short: 'PAGES' },
+  railway: { color: 0xa855f7, shape: 'box', short: 'RAILWAY' },
+  docker_compose: { color: 0x2496ed, shape: 'box', short: 'COMPOSE' },
+  docker_k8s: { color: 0x2496ed, shape: 'box', short: 'DOCKER + K8S' },
+  github_actions: { color: 0x2088ff, shape: 'box', short: 'ACTIONS' },
+  gitlab_ci: { color: 0xfc6d26, shape: 'box', short: 'GITLAB CI' }
+};
