@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; // <-- IMPORT NUEVO
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   ArchitectureSelection,
   LAYERS,
@@ -30,14 +30,14 @@ import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 /* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
-const OFFSET_ISO = new THREE.Vector3(18, 18, 18);
-const OFFSET_WIDE = new THREE.Vector3(9, 17, 21);
+// Forzamos un ángulo perfecto de maqueta isométrica
+const OFFSET_ISO = new THREE.Vector3(15, 15, 15); 
 const NODE_BASE_Y = 0.95;
 const SPACING_X = 5.4;
 const SPACING_Z = 4.4;
-const PLATFORM_MARGIN = 3.4;
+const PLATFORM_MARGIN = 4.0; // Un poco más de margen para que parezca una base sólida
 const PILL_H = 34;
-const PARTICLE_COUNT = 140;
+const PARTICLE_COUNT = 100;
 const INSET_CHECK_EVERY = 15;
 
 const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
@@ -60,55 +60,17 @@ interface ViewState {
   selectedId: string;
 }
 
-interface SlotDef {
-  key: string;
-  layer: LayerId;
-  x: number;
-  z: number;
-}
-
-interface PillRefs {
-  el: HTMLDivElement;
-  icon: HTMLImageElement;
-  name: HTMLElement;
-  layer: HTMLElement;
-  width: number;
-  key: string;
-}
-
+interface SlotDef { key: string; layer: LayerId; x: number; z: number; }
+interface PillRefs { el: HTMLDivElement; icon: HTMLImageElement; name: HTMLElement; layer: HTMLElement; width: number; key: string; }
 interface NodeEntry {
-  optionId: string;
-  group: THREE.Group;
-  body: THREE.Group;
-  materials: THREE.Material[];
-  spawn: number;
-  phase: number;
-  opacity: number;
-  targetOpacity: number;
-  glow: number;
-  baseGlow: number;
+  optionId: string; group: THREE.Group; body: THREE.Group; materials: THREE.Material[];
+  spawn: number; phase: number; opacity: number; targetOpacity: number; glow: number; baseGlow: number;
 }
-
-interface Slot {
-  key: string;
-  layer: LayerId;
-  position: THREE.Vector3;
-  pad: THREE.Mesh;
-  padMat: THREE.MeshBasicMaterial;
-  pill: PillRefs;
-  node: NodeEntry | null;
-}
-
-interface Insets {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
+interface Slot { key: string; layer: LayerId; position: THREE.Vector3; pad: THREE.Mesh; padMat: THREE.MeshBasicMaterial; pill: PillRefs; node: NodeEntry | null; }
+interface Insets { left: number; top: number; right: number; bottom: number; }
 
 const easeOutBack = (x: number): number => {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
+  const c1 = 1.70158; const c3 = c1 + 1;
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 };
 
@@ -129,29 +91,20 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
         position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 0.45rem;
         height: 34px; padding: 0 0.8rem 0 0.5rem; white-space: nowrap; opacity: 0;
         color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
-        background: rgba(3, 9, 14, 0.88);
+        background: rgba(15, 23, 42, 0.85); /* Slate-900 más sólido para look de fábrica */
         border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
         border-radius: 999px;
-        box-shadow: 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
         will-change: transform, opacity;
       }
       .sb3d-pill-icon { width: 18px; height: 18px; object-fit: contain; }
       .sb3d-pill-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 170px; }
       .sb3d-pill-text strong { overflow: hidden; font-size: 12px; font-weight: 650; line-height: 1.1; text-overflow: ellipsis; }
       .sb3d-pill-text small { font-size: 10px; line-height: 1.1; color: var(--layer); }
-      .sb3d-pill.is-ghost { background: rgba(3, 9, 14, 0.55); border-style: dashed; box-shadow: none; color: #94a3b8; }
+      .sb3d-pill.is-ghost { background: rgba(15, 23, 42, 0.4); border-style: dashed; box-shadow: none; color: #64748b; }
       .sb3d-pill.is-preview { box-shadow: 0 0 0 1px var(--layer), 0 0 20px color-mix(in srgb, var(--layer) 40%, transparent); }
-
-      .sb3d-tip {
-        position: absolute; left: 0; top: 0; opacity: 0; padding: 4px 10px; white-space: nowrap;
-        font-size: 12px; color: #e2e8f0; background: rgba(3, 9, 14, 0.92);
-        border: 1px solid; border-radius: 8px; transition: opacity 0.12s;
-      }
-      .sb3d-legend {
-        position: absolute; right: calc(var(--ins-right, 0px) + 16px); bottom: calc(var(--ins-bottom, 0px) + 10px);
-        display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; max-width: 60%;
-        font-size: 11px; color: #cbd5e1;
-      }
+      .sb3d-tip { position: absolute; left: 0; top: 0; opacity: 0; padding: 4px 10px; white-space: nowrap; font-size: 12px; color: #e2e8f0; background: rgba(15, 23, 42, 0.95); border: 1px solid; border-radius: 8px; transition: opacity 0.12s; }
+      .sb3d-legend { position: absolute; right: calc(var(--ins-right, 0px) + 16px); bottom: calc(var(--ins-bottom, 0px) + 10px); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; max-width: 60%; font-size: 11px; color: #cbd5e1; }
       .sb3d-legend span { display: flex; align-items: center; gap: 6px; }
       .sb3d-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; }
     `
@@ -169,12 +122,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly labelsHost = viewChild.required<ElementRef<HTMLElement>>('labelsHost');
 
   private readonly viewState = computed<ViewState>(() => ({
-    step: this.state.step(),
-    built: this.state.isBuilt(),
-    routeId: this.state.routeId(),
-    steps: this.state.steps(),
-    selection: this.state.selection(),
-    selectedId: this.state.selectedId()
+    step: this.state.step(), built: this.state.isBuilt(), routeId: this.state.routeId(),
+    steps: this.state.steps(), selection: this.state.selection(), selectedId: this.state.selectedId()
   }));
 
   private scene!: THREE.Scene;
@@ -228,27 +177,25 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.ngZone.runOutsideAngular(() => {
       this.initThree();
-
       this.connectors = new ConnectorLayer(this.labelsHost().nativeElement);
       this.scene.add(this.connectors.group);
+      
       const dom = this.renderer.domElement;
       dom.addEventListener('pointermove', this.onPointerMove);
       dom.addEventListener('pointerleave', this.onPointerLeave);
       dom.addEventListener('pointerdown', this.onPointerDown);
       dom.addEventListener('pointerup', this.onPointerUp);
 
-      this.createGrid();
+      this.createFactoryGrid(); // Nuevo grid tipo fábrica
       this.createParticles();
 
       this.measureInsets();
       this.applyInsetVars();
-
       this.ready = true;
       this.applyState(this.viewState());
 
       this.resizeObserver = new ResizeObserver(() => this.onResize());
       this.resizeObserver.observe(this.host().nativeElement);
-
       this.animate();
     });
   }
@@ -257,7 +204,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.resizeObserver?.disconnect();
     this.controls?.dispose();
-
     if (this.renderer) {
       const dom = this.renderer.domElement;
       dom.removeEventListener('pointermove', this.onPointerMove);
@@ -265,13 +211,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       dom.removeEventListener('pointerdown', this.onPointerDown);
       dom.removeEventListener('pointerup', this.onPointerUp);
     }
-
     this.slots.forEach(slot => this.destroySlot(slot));
     this.slots = [];
     this.disposeObject(this.platformGroup);
     this.connectors?.dispose();
     if (this.particles) this.disposeObject(this.particles);
-
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer.domElement.remove();
@@ -285,19 +229,20 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const aspect = this.width / this.height;
 
     this.scene = new THREE.Scene();
+    // Fondo ligeramente más claro para dar sensación de sala (opcional, tu tema es oscuro)
+    this.scene.fog = new THREE.FogExp2(0x020617, 0.02); 
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
     this.camera.zoom = 0.7;
     this.camera.position.copy(OFFSET_ISO);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setClearColor(0x000000, 0); // Mantenemos transparencia para que se vea tu fondo de la app
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(this.width, this.height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     
-    // ── NUEVO: Entorno para reflejos de cristal (PBR) ──
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     
@@ -314,60 +259,52 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.controls.maxPolarAngle = Math.PI / 2.15;
     this.controls.enabled = false;
     this.controls.target.set(0, 0, 0);
-    this.controls.addEventListener('start', () => {
-      this.autoFit = false;
-      this.autoAngle = false;
-    });
+    this.controls.addEventListener('start', () => { this.autoFit = false; this.autoAngle = false; });
     this.camera.lookAt(this.controls.target);
     this.controls.update();
 
-    // ── NUEVO: Iluminación optimizada para cristal ──
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    // Iluminación de "Fábrica": Sombras fuertes, luz direccional clara
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     
-    const key = new THREE.DirectionalLight(0xe6fff5, 2.0);
-    key.position.set(15, 25, 15);
+    const key = new THREE.DirectionalLight(0xffffff, 1.8); // Luz blanca pura
+    key.position.set(20, 30, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0005;
-    Object.assign(key.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
+    key.shadow.normalBias = 0.02; // Evita artefactos en las sombras
+    Object.assign(key.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 100 });
     this.scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x22d3ee, 1.2);
-    rim.position.set(-15, 15, -15);
-    this.scene.add(rim);
+    const fill = new THREE.DirectionalLight(0x22d3ee, 0.5); // Un toque cian de relleno
+    fill.position.set(-20, 10, -20);
+    this.scene.add(fill);
 
     this.scene.add(this.platformGroup, this.padsGroup, this.nodesGroup);
   }
 
-  private createGrid(): void {
-    const grid = new THREE.GridHelper(60, 60, 0x10b981, 0x064e3b);
-    grid.position.y = -0.4;
+  private createFactoryGrid(): void {
+    // Un grid más grande y tenue que se pierde en la oscuridad
+    const grid = new THREE.GridHelper(100, 100, 0x0f766e, 0x0f766e);
+    grid.position.y = -0.5;
     const mat = grid.material as THREE.LineBasicMaterial;
     mat.transparent = true;
-    mat.opacity = 0.35;
+    mat.opacity = 0.15; 
     this.scene.add(grid);
   }
 
   private createParticles(): void {
     const positions = new Float32Array(PARTICLE_COUNT * 3);
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 50;
-      positions[i * 3 + 1] = Math.random() * 14;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 50;
+      positions[i * 3] = (Math.random() - 0.5) * 60;
+      positions[i * 3 + 1] = Math.random() * 20;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
       this.particleSpeeds[i] = 0.004 + Math.random() * 0.008;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.particles = new THREE.Points(
       geometry,
-      new THREE.PointsMaterial({
-        color: 0x34d399,
-        size: 3,
-        sizeAttenuation: false,
-        transparent: true,
-        opacity: 0.45,
-        depthWrite: false
-      })
+      new THREE.PointsMaterial({ color: 0x34d399, size: 2, sizeAttenuation: false, transparent: true, opacity: 0.3, depthWrite: false })
     );
     this.scene.add(this.particles);
   }
@@ -391,11 +328,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     });
 
     const m = this.measuredInsets;
-    const changed =
-      Math.abs(next.left - m.left) > 2 ||
-      Math.abs(next.top - m.top) > 2 ||
-      Math.abs(next.right - m.right) > 2 ||
-      Math.abs(next.bottom - m.bottom) > 2;
+    const changed = Math.abs(next.left - m.left) > 2 || Math.abs(next.top - m.top) > 2 || Math.abs(next.right - m.right) > 2 || Math.abs(next.bottom - m.bottom) > 2;
     if (changed) this.measuredInsets = next;
     return changed;
   }
@@ -431,9 +364,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       defs.push({ key: step.category, layer: 'infra', x: (i - (infra.length - 1) / 2) * SPACING_X, z: SPACING_Z * 1.3 })
     );
 
-    body
-      .filter(s => s.layer === 'workspace')
-      .forEach(step => defs.push({ key: step.category, layer: 'workspace', x: colX('client'), z: -SPACING_Z }));
+    body.filter(s => s.layer === 'workspace').forEach(step => defs.push({ key: step.category, layer: 'workspace', x: colX('client'), z: -SPACING_Z }));
 
     return defs;
   }
@@ -450,11 +381,17 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const position = new THREE.Vector3(def.x, 0, def.z);
       const color = LAYERS.find(l => l.id === def.layer)?.color ?? 0x34d399;
 
-      const padGeometry = new THREE.BoxGeometry(3.6, 0.06, 3.6);
-      const padMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false });
+      // El "Pad" (base donde se posa la máquina): ahora parece una placa metálica
+      const padGeometry = new THREE.BoxGeometry(3.8, 0.1, 3.8);
+      const padMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.05, depthWrite: false });
       const pad = new THREE.Mesh(padGeometry, padMat);
-      pad.position.set(def.x, 0.03, def.z);
-      pad.add(new THREE.LineSegments(new THREE.EdgesGeometry(padGeometry), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 })));
+      pad.position.set(def.x, 0.05, def.z);
+      
+      // Borde brillante del pad
+      pad.add(new THREE.LineSegments(
+        new THREE.EdgesGeometry(padGeometry), 
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 })
+      ));
       this.padsGroup.add(pad);
 
       this.slots.push({ key: def.key, layer: def.layer, position, pad, padMat, pill: this.createPill(def.layer), node: null });
@@ -469,6 +406,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.layoutRoute = routeId;
   }
 
+  /** La plataforma base: ahora es el "suelo de la fábrica" sólido */
   private buildPlatform(): void {
     this.platformGroup.children.slice().forEach(child => {
       this.platformGroup.remove(child);
@@ -477,20 +415,25 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     const size = this.fitBox.getSize(new THREE.Vector3());
     const center = this.fitBox.getCenter(new THREE.Vector3());
-    const geometry = new THREE.BoxGeometry(size.x, 0.35, size.z);
+    
+    // Suelo sólido
+    const geometry = new THREE.BoxGeometry(size.x, 0.4, size.z);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x03120d,
-      emissive: 0x10b981,
-      emissiveIntensity: 0.18,
-      roughness: 0.6,
+      color: 0x0f172a, // Slate oscuro (concreto/metal)
+      roughness: 0.8,
       metalness: 0.2,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.95
     });
     const slab = new THREE.Mesh(geometry, mat);
     slab.position.y = -0.2;
     slab.receiveShadow = true;
-    slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.9 })));
+    
+    // Borde perimetral brillante
+    slab.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry), 
+      new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.6 })
+    ));
 
     this.platformGroup.add(slab);
     this.platformGroup.position.set(center.x, 0, center.z);
@@ -524,7 +467,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     }
 
     this.activeKey = s.built ? null : (s.steps[s.step]?.category ?? null);
-
     this.connectors.set(this.planLinks(this.chainSlots()));
   }
 
@@ -553,11 +495,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private planLinks(chain: Slot[]): LinkPlan[] {
     const end = (slot: Slot): LinkPlan['from'] => {
       const id = slot.node!.optionId;
-      return {
-        position: slot.position,
-        name: slot.layer === 'client' ? 'Usuario' : (OPTION_CATALOG[id]?.name ?? id),
-        optionId: id
-      };
+      return { position: slot.position, name: slot.layer === 'client' ? 'Usuario' : (OPTION_CATALOG[id]?.name ?? id), optionId: id };
     };
 
     return chain.slice(1).map((to, i) => {
@@ -581,7 +519,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     for (const slot of this.slots) {
       if (slot.node && slot.key !== 'client') bySlot.set(slot.node.group, slot);
     }
-
     const hit = this.raycaster.intersectObjects([...bySlot.keys()], true)[0];
     let object: THREE.Object3D | null = hit?.object ?? null;
     while (object && !bySlot.has(object)) object = object.parent;
@@ -591,7 +528,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private onPointerMove = (e: PointerEvent): void => {
     const { x, y } = this.updateRay(e);
     const overLink = this.connectors.hover(this.raycaster, x, y);
-
     this.hoverSlot = !overLink && this.built ? this.pickSlot() : null;
     this.renderer.domElement.style.cursor = overLink ? 'help' : this.hoverSlot ? 'pointer' : '';
   };
@@ -608,7 +544,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private onPointerUp = (e: PointerEvent): void => {
     if (!this.built || Math.hypot(e.clientX - this.downPos.x, e.clientY - this.downPos.y) > 5) return;
-
     this.updateRay(e);
     const slot = this.pickSlot();
     this.ngZone.run(() => (slot ? this.detail.toggle(slot.key) : this.detail.close()));
@@ -619,24 +554,20 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399;
     const piece: PieceModel = buildPiece(modelKindFor(slot.key, optionId), color, option?.iconUrl);
 
-    // ── NUEVO: Convertir materiales a Cristal Físico ──
+    // Material de "Máquina de Fábrica": Menos transparente, más metálico, con un brillo interno (emissive)
     piece.group.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         const oldMat = child.material;
         child.material = new THREE.MeshPhysicalMaterial({
           color: oldMat.color,
-          emissive: oldMat.emissive,
-          emissiveIntensity: oldMat.emissiveIntensity,
-          metalness: 0.1,
-          roughness: 0.1,         // Muy liso
-          transmission: 0.9,       // Efecto vidrio
-          thickness: 1.5,          // Grosor del vidrio
-          ior: 1.5,                // Índice de refracción
-          clearcoat: 1.0,          // Capa de brillo exterior
-          clearcoatRoughness: 0.1,
+          emissive: oldMat.color,       // Usamos el color de la capa para el brillo
+          emissiveIntensity: 0.2,       // Brillo sutil de "encendido"
+          metalness: 0.6,               // Más metálico
+          roughness: 0.3,               // Un poco más rugoso para que no parezca gelatina
+          clearcoat: 0.5,               // Brillo exterior
+          clearcoatRoughness: 0.2,
           transparent: true,
-          opacity: 0.9,
-          envMapIntensity: 1.5
+          opacity: 0.95                 // Casi opaco
         });
         oldMat.dispose();
       }
@@ -645,21 +576,14 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     piece.group.rotation.y = Math.PI / 4;
     const group = new THREE.Group();
     group.add(piece.group);
-    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z);
+    // La hacemos caer sobre el pad
+    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z); 
     group.scale.setScalar(0.0001);
     this.nodesGroup.add(group);
 
     return {
-      optionId,
-      group,
-      body: piece.group,
-      materials: piece.materials, // Ojo: si reemplazaste los materiales, esto podría no reflejar el nuevo material de cristal. 
-      spawn: 0,
-      phase: Math.random() * Math.PI * 2,
-      opacity: 0,
-      targetOpacity: 1,
-      glow: 1,
-      baseGlow: 1
+      optionId, group, body: piece.group, materials: piece.materials, // Nota: si los materiales se reemplazan, esto puede quedar desactualizado, pero el animate itera sobre el group.
+      spawn: 0, phase: Math.random() * Math.PI * 2, opacity: 0, targetOpacity: 1, glow: 1, baseGlow: 1
     };
   }
 
@@ -683,10 +607,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     el.style.setProperty('--layer', layerColor(layer));
 
     const icon = document.createElement('img');
-    icon.className = 'sb3d-pill-icon';
-    icon.alt = '';
-    icon.width = 18;
-    icon.height = 18;
+    icon.className = 'sb3d-pill-icon'; icon.alt = ''; icon.width = 18; icon.height = 18;
     icon.addEventListener('error', () => (icon.style.display = 'none'));
 
     const text = document.createElement('span');
@@ -694,7 +615,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const name = document.createElement('strong');
     const small = document.createElement('small');
     text.append(name, small);
-
     el.append(icon, text);
     this.labelsHost().nativeElement.appendChild(el);
     return { el, icon, name, layer: small, width: 120, key: '' };
@@ -713,24 +633,16 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     pill.layer.hidden = ghost;
 
     if (ghost) {
-      pill.name.textContent = layerName;
-      pill.icon.style.display = 'none';
+      pill.name.textContent = layerName; pill.icon.style.display = 'none';
     } else if (slot.key === 'client') {
-      pill.name.textContent = 'Usuario';
-      pill.layer.textContent = 'Cliente';
-      pill.icon.style.display = 'none';
+      pill.name.textContent = 'Usuario'; pill.layer.textContent = 'Cliente'; pill.icon.style.display = 'none';
     } else {
       const option = OPTION_CATALOG[optionId];
       pill.name.textContent = option?.name ?? optionId;
       pill.layer.textContent = layerName;
-      if (option?.iconUrl) {
-        pill.icon.style.display = '';
-        pill.icon.src = option.iconUrl;
-      } else {
-        pill.icon.style.display = 'none';
-      }
+      if (option?.iconUrl) { pill.icon.style.display = ''; pill.icon.src = option.iconUrl; }
+      else { pill.icon.style.display = 'none'; }
     }
-
     pill.width = Math.ceil(pill.el.getBoundingClientRect().width);
   }
 
@@ -742,14 +654,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.tmp.copy(slot.position).setY(PIECE_Y + 3.7).project(this.camera);
       const x = (this.tmp.x * 0.5 + 0.5) * this.width;
       const y = (-this.tmp.y * 0.5 + 0.5) * this.height;
-      const inside =
-        x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
+      const inside = x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
 
-      if (inside) {
-        items.push({ slot, x, y, w: slot.pill.width });
-      } else {
-        slot.pill.el.style.opacity = '0';
-      }
+      if (inside) items.push({ slot, x, y, w: slot.pill.width });
+      else slot.pill.el.style.opacity = '0';
     }
 
     items.sort((a, b) => a.y - b.y);
@@ -775,24 +683,19 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private onResize(): void {
     const el = this.host().nativeElement;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
+    const w = el.clientWidth; const h = el.clientHeight;
     if (!w || !h) return;
 
-    this.width = w;
-    this.height = h;
+    this.width = w; this.height = h;
     const aspect = w / h;
-    this.camera.left = -FRUSTUM * aspect;
-    this.camera.right = FRUSTUM * aspect;
-    this.camera.top = FRUSTUM;
-    this.camera.bottom = -FRUSTUM;
+    this.camera.left = -FRUSTUM * aspect; this.camera.right = FRUSTUM * aspect;
+    this.camera.top = FRUSTUM; this.camera.bottom = -FRUSTUM;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
 
     this.measureInsets();
     this.applyInsetVars();
-    this.autoFit = true;
-    this.autoAngle = true;
+    this.autoFit = true; this.autoAngle = true;
   }
 
   private animate = (): void => {
@@ -822,25 +725,20 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
       if (this.autoAngle) {
-        const wide = freeW / freeH > 1.25;
-        this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(wide ? OFFSET_WIDE : OFFSET_ISO, k);
+        // Siempre usamos el ángulo isométrico para mantener el look de "maqueta"
+        this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(OFFSET_ISO, k);
         this.camera.position.copy(this.controls.target).add(this.tmpOffset);
       }
       this.controls.update();
       this.camera.updateMatrixWorld();
 
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const x of [this.fitBox.min.x, this.fitBox.max.x]) {
         for (const y of [this.fitBox.min.y, this.fitBox.max.y]) {
           for (const z of [this.fitBox.min.z, this.fitBox.max.z]) {
             this.tmp.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
-            minX = Math.min(minX, this.tmp.x);
-            maxX = Math.max(maxX, this.tmp.x);
-            minY = Math.min(minY, this.tmp.y);
-            maxY = Math.max(maxY, this.tmp.y);
+            minX = Math.min(minX, this.tmp.x); maxX = Math.max(maxX, this.tmp.x);
+            minY = Math.min(minY, this.tmp.y); maxY = Math.max(maxY, this.tmp.y);
           }
         }
       }
@@ -868,7 +766,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const selected = this.detail.selected();
 
     for (const slot of this.slots) {
-      const padTarget = slot.key === this.activeKey || slot.key === selected ? 0.5 : 0.18;
+      const padTarget = slot.key === this.activeKey || slot.key === selected ? 0.15 : 0.05;
       slot.padMat.opacity += (padTarget - slot.padMat.opacity) * 0.12;
 
       const node = slot.node;
@@ -883,9 +781,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       node.opacity += (node.targetOpacity - node.opacity) * 0.12;
       node.glow += (node.baseGlow * boost - node.glow) * 0.12;
       
-      // NOTA: Si al cambiar a MeshPhysicalMaterial los objetos no reaccionan al brillo, 
-      // puede ser porque el array node.materials guarda los materiales viejos. 
-      // Para evitar problemas, iteramos directamente sobre el grupo:
       node.group.traverse((child) => {
         if (child instanceof THREE.Mesh) {
            const mat = child.material;
@@ -893,13 +788,13 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
              mat.forEach(m => {
                 m.opacity = node.opacity;
                 if (m instanceof THREE.MeshPhysicalMaterial || m instanceof THREE.MeshStandardMaterial) {
-                  m.emissiveIntensity = ((m.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+                  m.emissiveIntensity = 0.2 * node.glow; // Base glow ahora es 0.2
                 }
              });
            } else if (mat) {
              mat.opacity = node.opacity;
              if (mat instanceof THREE.MeshPhysicalMaterial || mat instanceof THREE.MeshStandardMaterial) {
-               mat.emissiveIntensity = ((mat.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+               mat.emissiveIntensity = 0.2 * node.glow;
              }
            }
         }
@@ -924,12 +819,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private disposeObject(object: THREE.Object3D): void {
     object.traverse(child => {
-      const item = child as THREE.Object3D & {
-        geometry?: THREE.BufferGeometry;
-        material?: THREE.Material | THREE.Material[];
-      };
+      const item = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[]; };
       item.geometry?.dispose();
-
       const materials = Array.isArray(item.material) ? item.material : item.material ? [item.material] : [];
       materials.forEach(mat => mat.dispose());
     });
