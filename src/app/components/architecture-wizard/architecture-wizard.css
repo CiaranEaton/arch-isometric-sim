@@ -117,6 +117,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
+  overflow-y: auto; /* Aquí está la magia, el scroll es general */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(52, 211, 153, 0.35) transparent;
+  padding-right: 4px; /* Un poco de espacio para el scroll */
   animation: sb-in 0.26s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
@@ -169,16 +173,13 @@
 /* ───────── Opciones ───────── */
 
 .sb-options {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto; /* Ya no se encoge, ocupa su espacio natural */
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin: -3px;
-  padding: 3px; /* espacio para que el foco y el halo no se recorten */
-  overflow-y: auto; /* solo aparece si la pantalla es muy baja para las opciones del paso */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(52, 211, 153, 0.35) transparent;
+  padding: 3px;
+  /* Quitamos el overflow-y de aquí */
 }
 
 .sb-option {
@@ -286,13 +287,16 @@
 
 .sb-detail {
   flex: 0 0 auto;
-  height: 10.5rem;
+  height: auto; 
+  max-height: 12rem; /* Un tope para que no sea infinito */
+  overflow-y: auto;
   padding: 0.85rem 1rem;
-  overflow: hidden;
   background: rgba(2, 6, 12, 0.6);
   border: 1px solid var(--sb-line);
   border-radius: 0.85rem;
+  scrollbar-width: none; /* Ocultamos la barra fea aquí dentro */
 }
+.sb-detail::-webkit-scrollbar { display: none; }
 
 .sb-detail-inner {
   animation: sb-fade 0.18s both;

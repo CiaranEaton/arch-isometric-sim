@@ -354,7 +354,7 @@ const CATALOG_DATA: Record<string, Omit<StepOption, 'id'>> = {
     name: 'Auth0 / Clerk',
     description: 'Identidad como servicio: login social, MFA y gestión de usuarios sin construir nada.',
     tags: ['OIDC', 'Login social', 'MFA'],
-    iconUrl: icon('auth0'),
+    iconUrl: 'https://cdn.simpleicons.org/auth0/FFFFFF', // <-- URL ARREGLADA
     analogy: 'Un servicio de valet parking. Ellos manejan las llaves (login social) y la seguridad de los autos, tú solo te preocupas por la fiesta.',
     metrics: { complexity: 'Baja', scalability: 'Muy Alta', cost: 'Pago por uso' },
     affinities: [{ when: { route: ['fullstack-simple'] }, score: 1, reason: 'Login social y MFA listos si no usas Supabase.' }]
