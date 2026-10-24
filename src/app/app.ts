@@ -16,29 +16,30 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
   template: `
     <main class="relative h-[100dvh] w-full overflow-hidden font-sans text-slate-100 flex flex-col lg:block">
       
-      <!-- 3D Canvas (Ocupa todo el fondo siempre) -->
-      <div class="absolute inset-0 z-0">
+      <!-- 3D Canvas (Ocupa todo el fondo, la cámara se encarga de la posición) -->
+      <div class="absolute inset-0 z-0 pointer-events-none lg:pointer-events-auto">
         <app-isometric-canvas />
       </div>
 
       <!-- Viñeta suave -->
       <div class="pointer-events-none absolute inset-0 z-[1]" style="background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(2, 4, 10, 0.6) 100%);"></div>
 
-      <!-- Header -->
-      <header data-avoid class="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-4 px-4 py-3 lg:px-6 lg:py-4">
-        <div class="min-w-0">
-          <h1 class="text-xl font-black tracking-wide text-white lg:text-2xl drop-shadow-md">Stack Builder</h1>
-          <p class="mt-0.5 hidden text-sm text-slate-400 sm:block drop-shadow-sm">Elige cada pieza y mira cómo se arma la arquitectura en 3D.</p>
+      <!-- Header Móvil (Píldora de cristal) -->
+      <header data-avoid class="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-3 lg:px-6 lg:py-4">
+        <div class="min-w-0 rounded-full border border-white/10 bg-slate-900/50 px-4 py-2 backdrop-blur-md lg:border-none lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+          <h1 class="text-lg font-black tracking-wide text-white lg:text-2xl drop-shadow-md">Stack Builder</h1>
         </div>
       </header>
 
       @if (!state.isBuilt()) {
         <!-- VISTA WIZARD (Configuración) -->
+        <!-- En móvil: flex-1 para que ocupe el resto, en Desktop: absolute izquierdo -->
         <div
           data-avoid
-          class="absolute inset-x-0 bottom-0 z-20 h-[65dvh] overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-slate-900/50 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:h-auto lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-none lg:bg-transparent lg:pb-0 lg:backdrop-blur-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          class="absolute inset-x-0 bottom-0 z-20 h-[60dvh] flex flex-col overflow-hidden rounded-t-3xl border-t border-white/10 bg-slate-900/60 backdrop-blur-2xl lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:h-auto lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-none lg:bg-transparent lg:backdrop-blur-none"
         >
-          <app-architecture-wizard />
+          <!-- El wizard ocupa el 100% del alto y maneja su propio scroll interno y footer sticky -->
+          <app-architecture-wizard class="flex-1 overflow-hidden" />
         </div>
       } @else {
         <!-- VISTA FINAL (Resultado) -->
@@ -58,7 +59,7 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
           </div>
 
           <!-- Lista de Pasos (Cristal) -->
-          <div class="pointer-events-auto w-full rounded-t-3xl border-t border-white/10 bg-slate-900/50 px-4 pt-4 pb-6 backdrop-blur-2xl lg:rounded-none lg:border-none lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+          <div class="pointer-events-auto w-full rounded-t-3xl border-t border-white/10 bg-slate-900/60 px-4 pt-4 pb-6 backdrop-blur-2xl lg:rounded-none lg:border-none lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
             <!-- En móvil es un scroll horizontal, en escritorio vertical -->
             <div class="relative flex w-full flex-row gap-3 overflow-x-auto lg:flex-col lg:gap-4 lg:overflow-visible [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               

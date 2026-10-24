@@ -16,14 +16,14 @@ export class ArchitectureWizardComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   constructor() {
-    // Mantiene visible el paso activo cuando el stepper desborda (rutas con muchos pasos).
+    // Mantiene visible el paso activo cuando el stepper desborda
     effect(() => {
       this.state.step();
       requestAnimationFrame(() => this.revealCurrentStep());
     });
   }
 
-  /** Flechas / Home / End dentro de la lista de opciones (patrón estándar de radiogroup). */
+  /** Flechas / Home / End dentro de la lista de opciones */
   onRadioKeydown(event: KeyboardEvent): void {
     const options = this.state.activeStep().options;
     const current = Math.max(0, options.findIndex(o => o.id === this.state.selectedId()));
@@ -53,9 +53,18 @@ export class ArchitectureWizardComponent {
     this.host.nativeElement.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
   }
 
-  /** Si el ícono del CDN no carga, se oculta y queda el recuadro vacío (sin romper el layout). */
+  /** Si el ícono del CDN no carga, se oculta */
   onIconError(event: Event): void {
     (event.target as HTMLImageElement).style.display = 'none';
+  }
+
+  // Métodos para los botones de navegación
+  next(): void {
+    this.state.step.set(this.state.step() + 1);
+  }
+
+  prev(): void {
+    this.state.step.set(this.state.step() - 1);
   }
 
   private revealCurrentStep(): void {
