@@ -13,12 +13,14 @@
             [class.is-current]="i === state.step()"
             [class.is-done]="i < state.step()"
             [attr.aria-current]="i === state.step() ? 'step' : null"
+            [attr.aria-label]="'Paso ' + (i + 1) + ': ' + s.menuTitle"
+            [attr.title]="s.menuTitle"
             [disabled]="i > state.reached()"
             [style.--layer]="layerColor(s.layer)"
             (click)="state.goToStep(i)"
           >
             <span class="sb-step-num" aria-hidden="true">{{ i + 1 }}</span>
-            <span class="sb-step-name">{{ s.menuTitle }}</span>
+            <span class="sb-step-name" aria-hidden="true">{{ s.menuTitle }}</span>
           </button>
         </li>
       }
@@ -60,13 +62,14 @@
         }
       </div>
 
-      <div class="sb-detail" tabindex="0" role="region" aria-label="Detalle de la opción seleccionada">
+      <!-- Detalle: alto fijo en escritorio y a la medida en móvil; el texto se recorta en vez de hacer scroll -->
+      <div class="sb-detail" role="group" aria-label="Detalle de la opción seleccionada">
         @for (option of [state.selectedOption()]; track option.id) {
           <div class="sb-detail-inner">
-            <p class="sb-desc">{{ option.description }}</p>
+            <p class="sb-desc" [attr.title]="option.description">{{ option.description }}</p>
 
             @if (state.fits()[option.id]?.reason; as reason) {
-              <p class="sb-reason"><strong>Por qué encaja:</strong> {{ reason }}</p>
+              <p class="sb-reason" [attr.title]="reason"><strong>Por qué encaja:</strong> {{ reason }}</p>
             }
 
             <ul class="sb-tags">

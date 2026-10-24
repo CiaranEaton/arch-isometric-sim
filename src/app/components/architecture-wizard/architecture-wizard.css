@@ -11,14 +11,14 @@
   font-family: var(--sb-font);
 }
 
-/* ───────── Panel: altura fija, nada dentro cambia el tamaño del contenedor ───────── */
+/* ───────── Panel (escritorio): altura fija, nada dentro cambia el tamaño del contenedor ───────── */
 
 .sb-panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: min(42rem, calc(100dvh - 9rem));
-  min-height: 32rem;
+  height: min(46rem, calc(100dvh - 6rem));
+  min-height: 34rem;
   padding: 1rem 1.25rem;
   overflow: hidden;
   background: rgba(3, 9, 14, 0.86);
@@ -176,7 +176,7 @@
   gap: 0.5rem;
   margin: -3px;
   padding: 3px; /* espacio para que el foco y el halo no se recorten */
-  overflow-y: auto;
+  overflow-y: auto; /* solo aparece si la pantalla es muy baja para las opciones del paso */
   scrollbar-width: thin;
   scrollbar-color: rgba(52, 211, 153, 0.35) transparent;
 }
@@ -187,7 +187,7 @@
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  height: 3.4rem;
+  height: 3.2rem;
   padding: 0 0.9rem;
   color: inherit;
   text-align: left;
@@ -282,18 +282,16 @@
   transform: none;
 }
 
-/* ───────── Detalle: altura fija con scroll interno ───────── */
+/* ───────── Detalle: alto fijo y SIN scroll; el texto se recorta con "…" (el texto completo va en el title) ───────── */
 
 .sb-detail {
   flex: 0 0 auto;
-  height: 9rem;
+  height: 10.5rem;
   padding: 0.85rem 1rem;
-  overflow-y: auto;
+  overflow: hidden;
   background: rgba(2, 6, 12, 0.6);
   border: 1px solid var(--sb-line);
   border-radius: 0.85rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(52, 211, 153, 0.35) transparent;
 }
 
 .sb-detail-inner {
@@ -301,42 +299,58 @@
 }
 
 .sb-desc {
+  display: -webkit-box;
   margin: 0;
+  overflow: hidden;
   color: #cbd5e1;
   font-size: 0.82rem;
   line-height: 1.5;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .sb-reason {
+  display: -webkit-box;
   margin: 0.6rem 0 0;
+  overflow: hidden;
   color: #bef264;
   font-size: 0.78rem;
   line-height: 1.45;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .sb-reason strong {
   font-weight: 650;
 }
 
+/* Una sola fila de etiquetas; si no caben, se desvanecen en el borde en vez de saltar de línea */
 .sb-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.4rem;
   margin: 0.7rem 0 0;
   padding: 0;
+  overflow: hidden;
   list-style: none;
+  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+  mask-image: linear-gradient(to right, #000 88%, transparent);
 }
 
 .sb-tag {
+  flex: 0 0 auto;
   padding: 0.18rem 0.55rem;
   color: #6ee7b7;
   font-size: 0.72rem;
+  white-space: nowrap;
   background: rgba(2, 6, 12, 0.8);
   border: 1px solid rgba(52, 211, 153, 0.25);
   border-radius: 0.4rem;
 }
 
-/* ───────── Acciones ───────── */
+/* ───────── Acciones: siempre visibles al final del panel ───────── */
 
 .sb-actions {
   flex: 0 0 auto;
@@ -391,22 +405,144 @@
 
 .sb-step:focus-visible,
 .sb-option:focus-visible,
-.sb-detail:focus-visible,
 .sb-btn:focus-visible {
   outline: 2px solid var(--sb-focus);
   outline-offset: 2px;
 }
 
-/* ───────── Móvil ───────── */
+/* ───────── Móvil / tablet: hoja inferior a la medida de su contenido ─────────
+   El contenedor (app.ts) ya pone el fondo de cristal y las esquinas; aquí el panel solo
+   mide lo que necesita (tope 66dvh), así el 3D conserva el resto de la pantalla. */
 
-@media (max-width: 640px) {
+@media (max-width: 1023px) {
   .sb-panel {
-    height: min(40rem, 72dvh);
-    padding: 0.85rem;
+    height: auto;
+    min-height: 0;
+    max-height: 66dvh;
+    padding: 0.5rem 1rem 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  /* Stepper compacto: puntos numerados y solo el paso actual muestra su nombre */
+  .sb-stepper {
+    margin-bottom: 0.5rem;
+  }
+
+  .sb-steps {
+    gap: 0.2rem;
+  }
+
+  .sb-step {
+    height: 1.9rem;
+    padding: 0 0.6rem 0 0.2rem;
+    gap: 0.35rem;
+  }
+
+  .sb-step:not(.is-current) {
+    justify-content: center;
+    width: 1.65rem;
+    padding: 0;
+  }
+
+  .sb-step:not(.is-current) .sb-step-name {
+    display: none;
+  }
+
+  .sb-step-num {
+    width: 1.4rem;
+    height: 1.4rem;
+  }
+
+  .sb-body {
+    gap: 0.55rem;
   }
 
   .sb-title {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
+  }
+
+  .sb-subtitle {
+    display: none;
+  }
+
+  .sb-options {
+    flex: 1 1 auto; /* mide lo que miden sus filas; solo hace scroll si ni así cabe */
+    gap: 0.4rem;
+  }
+
+  .sb-option {
+    height: 2.75rem;
+    gap: 0.6rem;
+    padding: 0 0.7rem;
+    border-radius: 0.75rem;
+  }
+
+  .sb-option-icon {
+    flex-basis: 1.9rem;
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  .sb-option-icon img {
+    width: 1.3rem;
+    height: 1.3rem;
+  }
+
+  .sb-option-name {
+    font-size: 0.82rem;
+  }
+
+  .sb-badge {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.62rem;
+  }
+
+  .sb-detail {
+    height: auto;
+    padding: 0.6rem 0.8rem;
+  }
+
+  .sb-desc {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .sb-reason {
+    margin-top: 0.4rem;
+    font-size: 0.74rem;
+  }
+
+  /* Las etiquetas de tecnología se ven en el detalle de la vista final */
+  .sb-tags {
+    display: none;
+  }
+
+  /* Botones pegados al borde inferior y cómodos para el pulgar */
+  .sb-actions {
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    padding: 0.6rem 0 0.75rem;
+  }
+
+  .sb-btn {
+    height: 2.9rem;
+    border-radius: 0.85rem;
+  }
+
+  .sb-btn-ghost {
+    min-width: 5.5rem;
+  }
+
+  .sb-btn-primary {
+    flex: 1 1 auto;
+    min-width: 0;
+    box-shadow: 0 0 22px rgba(52, 211, 153, 0.35);
   }
 }
 
