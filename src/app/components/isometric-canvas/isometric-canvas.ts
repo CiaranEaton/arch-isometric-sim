@@ -15,19 +15,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  ArchitectureSelection,
-  LAYERS,
-  LayerId,
-  OPTION_CATALOG,
-  WizardStep,
-  layerColor
+  ArchitectureSelection, LAYERS, LayerId, OPTION_CATALOG, WizardStep, layerColor
 } from '../../models/architecture.models';
 import { ArchitectureStateService } from '../../services/architecture-state.service';
 import { PieceDetailService } from '../../services/piece-detail.service';
 import { ConnectorLayer, LinkPlan, Protocol } from './connectors';
 import { PieceModel, buildPiece, modelKindFor } from './piece-models';
-
-/* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
 const OFFSET_ISO = new THREE.Vector3(15, 15, 15); 
@@ -38,44 +31,22 @@ const PLATFORM_MARGIN = 4.0;
 const PILL_H = 34;
 const PARTICLE_COUNT = 100;
 const INSET_CHECK_EVERY = 15;
-
 const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
 
 const LAYER_LABEL: Record<string, string> = {
-  ...Object.fromEntries(LAYERS.map(l => [l.id, l.label])),
-  workspace: 'Estructura'
+  ...Object.fromEntries(LAYERS.map(l => [l.id, l.label])), workspace: 'Estructura'
 };
-
 const PIECE_Y = 0.1;
 
-/* ───────────────────────── Tipos internos ───────────────────────── */
-
-interface ViewState {
-  step: number;
-  built: boolean;
-  routeId: string;
-  steps: WizardStep[];
-  selection: ArchitectureSelection;
-  selectedId: string;
-}
-
+interface ViewState { step: number; built: boolean; routeId: string; steps: WizardStep[]; selection: ArchitectureSelection; selectedId: string; }
 interface SlotDef { key: string; layer: LayerId; x: number; z: number; }
 interface PillRefs { el: HTMLDivElement; icon: HTMLImageElement; name: HTMLElement; layer: HTMLElement; width: number; key: string; }
-interface NodeEntry {
-  optionId: string; group: THREE.Group; body: THREE.Group; materials: THREE.Material[];
-  spawn: number; phase: number; opacity: number; targetOpacity: number; glow: number; baseGlow: number;
-}
+interface NodeEntry { optionId: string; group: THREE.Group; body: THREE.Group; materials: THREE.Material[]; spawn: number; phase: number; opacity: number; targetOpacity: number; glow: number; baseGlow: number; }
 interface Slot { key: string; layer: LayerId; position: THREE.Vector3; pad: THREE.Mesh; padMat: THREE.MeshBasicMaterial; pill: PillRefs; node: NodeEntry | null; }
 interface Insets { left: number; top: number; right: number; bottom: number; }
 
-const easeOutBack = (x: number): number => {
-  const c1 = 1.70158; const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-};
-
+const easeOutBack = (x: number): number => { const c1 = 1.70158; const c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
-
-/* ───────────────────────── Componente ───────────────────────── */
 
 @Component({
   selector: 'app-isometric-canvas',
@@ -90,10 +61,8 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
         position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 0.45rem;
         height: 34px; padding: 0 0.8rem 0 0.5rem; white-space: nowrap; opacity: 0;
         color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
-        border-radius: 999px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
+        background: rgba(15, 23, 42, 0.85); border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
+        border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
         will-change: transform, opacity;
       }
       .sb3d-pill-icon { width: 18px; height: 18px; object-fit: contain; }
@@ -161,6 +130,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly tmp = new THREE.Vector3();
   private readonly tmpCenter = new THREE.Vector3();
   private readonly tmpOffset = new THREE.Vector3();
+  
+  // NUEVO: Para enfocar la cámara en la pieza seleccionada
+  private focusTarget: THREE.Vector3 | null = null;
+  private lastSelected: string | null = null;
 
   private measuredInsets: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
   private insetTick = 0;
@@ -170,6 +143,26 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const s = this.viewState();
       if (!this.ready) return;
       this.applyState(s);
+    });
+
+    // Escuchar cuando se selecciona una pieza para enfocar la cámara
+    effect(() => {
+      const selected = this.detail.selected();
+      if (!this.ready || !this.built) return;
+      
+      if (selected !== this.lastSelected) {
+        this.lastSelected = selected;
+        if (selected) {
+          const slot = this.slots.find(s => s.key === selected);
+          if (slot) {
+            this.focusTarget = slot.position.clone();
+            this.autoFit = false; // Desactivamos el auto-encuadre global para enfocar
+          }
+        } else {
+          this.focusTarget = null;
+          this.autoFit = true; // Volver a encuadrar todo al cerrar
+        }
+      }
     });
   }
 
@@ -251,19 +244,18 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.minZoom = 0.6; // Previene zoom out infinito
-    this.controls.maxZoom = 3;   // Previene zoom in infinito
-    this.controls.enablePan = false; // Previene desplazamiento infinito
+    this.controls.minZoom = 0.6; 
+    this.controls.maxZoom = 3;   
+    this.controls.enablePan = false; 
     this.controls.minPolarAngle = 0.25;
     this.controls.maxPolarAngle = Math.PI / 2.15;
     this.controls.enabled = false;
     this.controls.target.set(0, 0, 0);
-    this.controls.addEventListener('start', () => { this.autoFit = false; this.autoAngle = false; });
+    this.controls.addEventListener('start', () => { this.autoFit = false; this.autoAngle = false; this.focusTarget = null; });
     this.camera.lookAt(this.controls.target);
     this.controls.update();
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    
     const key = new THREE.DirectionalLight(0xffffff, 1.8);
     key.position.set(20, 30, 10);
     key.castShadow = true;
@@ -338,7 +330,14 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private insets(): Insets {
     const m = this.measuredInsets;
-    return { left: m.left + 20, top: m.top + 44, right: m.right + 20, bottom: m.bottom + 20 };
+    // En móvil, reducimos el margen para que el 3D tenga más espacio
+    const isMobile = this.width < 768;
+    return { 
+      left: m.left + (isMobile ? 10 : 20), 
+      top: m.top + (isMobile ? 20 : 44), 
+      right: m.right + (isMobile ? 10 : 20), 
+      bottom: m.bottom + (isMobile ? 10 : 20) 
+    };
   }
 
   private computeSlotDefs(steps: WizardStep[]): SlotDef[] {
@@ -435,8 +434,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private applyState(s: ViewState): void {
     this.built = s.built;
     this.controls.enabled = s.built;
-    this.autoFit = true;
-    this.autoAngle = true;
+    if (!this.focusTarget) {
+      this.autoFit = true;
+      this.autoAngle = true;
+    }
 
     if (s.routeId !== this.layoutRoute) this.rebuildLayout(s.routeId, s.steps);
 
@@ -705,15 +706,33 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private updateCamera(): void {
     if (++this.insetTick % INSET_CHECK_EVERY === 0 && this.measureInsets()) {
       this.applyInsetVars();
-      this.autoFit = true;
+      if (!this.focusTarget) this.autoFit = true;
     }
 
-    if (this.autoFit && this.slots.length) {
-      const k = 0.08;
-      const ins = this.insets();
-      const freeW = Math.max(this.width - ins.left - ins.right, 120);
-      const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
+    const k = 0.08;
+    const ins = this.insets();
+    const freeW = Math.max(this.width - ins.left - ins.right, 120);
+    const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
+    // Lógica de enfoque a pieza específica
+    if (this.focusTarget) {
+      this.tmp.copy(this.focusTarget).sub(this.controls.target).multiplyScalar(k);
+      this.controls.target.add(this.tmp);
+      this.camera.position.add(this.tmp);
+      
+      // Hacemos zoom in
+      this.camera.zoom += (1.8 - this.camera.zoom) * k;
+      
+      // Centrar la vista en el espacio libre
+      this.shift.x += (ins.left + freeW / 2 - this.width / 2 - this.shift.x) * k;
+      this.shift.y += (ins.top + freeH / 2 - this.height / 2 - this.shift.y) * k;
+      
+      if (this.controls.target.distanceTo(this.focusTarget) < 0.05) {
+        this.focusTarget = null; // Llegamos al objetivo
+      }
+    } 
+    // Lógica de encuadre global
+    else if (this.autoFit && this.slots.length) {
       if (this.autoAngle) {
         this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(OFFSET_ISO, k);
         this.camera.position.copy(this.controls.target).add(this.tmpOffset);
