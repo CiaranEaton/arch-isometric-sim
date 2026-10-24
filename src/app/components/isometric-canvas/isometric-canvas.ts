@@ -23,15 +23,20 @@ import { ConnectorLayer, LinkPlan, Protocol } from './connectors';
 import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 
 const FRUSTUM = 12;
-const OFFSET_ISO = new THREE.Vector3(15, 15, 15); 
+const OFFSET_ISO = new THREE.Vector3(15, 15, 15);
 const NODE_BASE_Y = 0.95;
 const SPACING_X = 5.4;
 const SPACING_Z = 4.4;
 const PLATFORM_MARGIN = 4.0;
 const PILL_H = 34;
+const ICON_SIZE = 32;
 const PARTICLE_COUNT = 100;
 const INSET_CHECK_EVERY = 15;
+const OCCLUSION_EVERY = 8;
 const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
+
+/** Id interno de la pieza "silueta" que marca un slot todavía sin elegir. */
+const GHOST = '__ghost';
 
 const LAYER_LABEL: Record<string, string> = {
   ...Object.fromEntries(LAYERS.map(l => [l.id, l.label])), workspace: 'Estructura'
@@ -40,13 +45,26 @@ const PIECE_Y = 0.1;
 
 interface ViewState { step: number; built: boolean; routeId: string; steps: WizardStep[]; selection: ArchitectureSelection; selectedId: string; }
 interface SlotDef { key: string; layer: LayerId; x: number; z: number; }
-interface PillRefs { el: HTMLDivElement; icon: HTMLImageElement; name: HTMLElement; layer: HTMLElement; width: number; key: string; }
+interface PillRefs {
+  el: HTMLDivElement;
+  icon: HTMLImageElement;
+  badge: HTMLElement;
+  name: HTMLElement;
+  layer: HTMLElement;
+  /** Ancho de la etiqueta completa (el ícono siempre mide ICON_SIZE). */
+  width: number;
+  key: string;
+  icon$: boolean;
+}
 interface NodeEntry { optionId: string; group: THREE.Group; body: THREE.Group; materials: THREE.Material[]; spawn: number; phase: number; opacity: number; targetOpacity: number; glow: number; baseGlow: number; }
-interface Slot { key: string; layer: LayerId; position: THREE.Vector3; pad: THREE.Mesh; padMat: THREE.MeshBasicMaterial; pill: PillRefs; node: NodeEntry | null; }
+interface Slot { key: string; layer: LayerId; position: THREE.Vector3; pad: THREE.Mesh; padMat: THREE.MeshBasicMaterial; pill: PillRefs; node: NodeEntry | null; occluded: boolean; }
 interface Insets { left: number; top: number; right: number; bottom: number; }
+interface Rect { x: number; y: number; w: number; h: number; }
 
 const easeOutBack = (x: number): number => { const c1 = 1.70158; const c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+const overlaps = (a: Rect, b: Rect, gap = 4): boolean =>
+  a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
 
 @Component({
   selector: 'app-isometric-canvas',
@@ -66,11 +84,21 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
         will-change: transform, opacity; transition: opacity 0.2s;
       }
       .sb3d-pill-icon { width: 18px; height: 18px; object-fit: contain; }
+      .sb3d-pill-badge { display: none; font-size: 12px; font-weight: 700; color: var(--layer); }
       .sb3d-pill-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 170px; }
       .sb3d-pill-text strong { overflow: hidden; font-size: 12px; font-weight: 650; line-height: 1.1; text-overflow: ellipsis; }
       .sb3d-pill-text small { font-size: 10px; line-height: 1.1; color: var(--layer); }
       .sb3d-pill.is-ghost { background: rgba(15, 23, 42, 0.4); border-style: dashed; box-shadow: none; color: #64748b; }
       .sb3d-pill.is-preview { box-shadow: 0 0 0 1px var(--layer), 0 0 20px color-mix(in srgb, var(--layer) 40%, transparent); }
+
+      /* Versión compacta: solo el logo, pegado a su pieza (cuando la etiqueta completa estorbaría) */
+      .sb3d-pill.is-icon { width: 32px; height: 32px; padding: 0; gap: 0; justify-content: center; }
+      .sb3d-pill.is-icon .sb3d-pill-text { display: none; }
+      .sb3d-pill.is-icon .sb3d-pill-icon { width: 20px; height: 20px; }
+      .sb3d-pill.no-img .sb3d-pill-icon { display: none; }
+      .sb3d-pill.is-icon.no-img .sb3d-pill-badge { display: block; }
+      .sb3d-pill.is-occluded { filter: saturate(0.4); }
+
       .sb3d-tip { position: absolute; left: 0; top: 0; opacity: 0; padding: 4px 10px; white-space: nowrap; font-size: 12px; color: #e2e8f0; background: rgba(15, 23, 42, 0.95); border: 1px solid; border-radius: 8px; transition: opacity 0.12s; }
       .sb3d-legend { position: absolute; right: calc(var(--ins-right, 0px) + 16px); bottom: calc(var(--ins-bottom, 0px) + 10px); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; max-width: 60%; font-size: 11px; color: #cbd5e1; }
       .sb3d-legend span { display: flex; align-items: center; gap: 6px; }
@@ -103,6 +131,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private ready = false;
   private width = 1;
   private height = 1;
+  private frame = 0;
 
   private readonly platformGroup = new THREE.Group();
   private readonly padsGroup = new THREE.Group();
@@ -112,6 +141,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private connectors!: ConnectorLayer;
   private readonly raycaster = new THREE.Raycaster();
+  private readonly occluder = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
 
   private slots: Slot[] = [];
@@ -130,7 +160,9 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly tmp = new THREE.Vector3();
   private readonly tmpCenter = new THREE.Vector3();
   private readonly tmpOffset = new THREE.Vector3();
-  
+  private readonly tmpDir = new THREE.Vector3();
+  private readonly rayOrigin = new THREE.Vector3();
+
   private focusTarget: THREE.Vector3 | null = null;
   private lastSelected: string | null = null;
 
@@ -147,7 +179,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     effect(() => {
       const selected = this.detail.selected();
       if (!this.ready || !this.built) return;
-      
+
       if (selected !== this.lastSelected) {
         this.lastSelected = selected;
         if (selected) {
@@ -169,7 +201,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.initThree();
       this.connectors = new ConnectorLayer(this.labelsHost().nativeElement);
       this.scene.add(this.connectors.group);
-      
+
       const dom = this.renderer.domElement;
       dom.addEventListener('pointermove', this.onPointerMove);
       dom.addEventListener('pointerleave', this.onPointerLeave);
@@ -219,22 +251,22 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const aspect = this.width / this.height;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x020617, 0.02); 
+    this.scene.fog = new THREE.FogExp2(0x020617, 0.02);
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
     this.camera.zoom = 0.7;
     this.camera.position.copy(OFFSET_ISO);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x000000, 0); 
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(this.width, this.height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
+
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-    
+
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.touchAction = 'none';
     el.appendChild(this.renderer.domElement);
@@ -242,9 +274,9 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.minZoom = 0.6; 
-    this.controls.maxZoom = 3;   
-    this.controls.enablePan = false; 
+    this.controls.minZoom = 0.6;
+    this.controls.maxZoom = 3;
+    this.controls.enablePan = false;
     this.controls.minPolarAngle = 0.25;
     this.controls.maxPolarAngle = Math.PI / 2.15;
     this.controls.enabled = false;
@@ -275,7 +307,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     grid.position.y = -0.5;
     const mat = grid.material as THREE.LineBasicMaterial;
     mat.transparent = true;
-    mat.opacity = 0.15; 
+    mat.opacity = 0.15;
     this.scene.add(grid);
   }
 
@@ -296,20 +328,23 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.scene.add(this.particles);
   }
 
+  /* ───────────── Zonas ocupadas por paneles ───────────── */
+
   private measureInsets(): boolean {
     const canvas = this.host().nativeElement.getBoundingClientRect();
     const next: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
-    const isMobile = this.width < 1024; // lg breakpoint
+    const isMobile = this.width < 1024; // breakpoint lg
+    // En móvil, la barra inferior de la vista final flota sobre el modelo (cristal): no le resta espacio.
+    // En el wizard SÍ se respeta el panel, si no el modelo queda escondido detrás de él.
+    const floatBottom = isMobile && this.built && !this.detail.selected();
 
     document.querySelectorAll<HTMLElement>('[data-avoid]').forEach(el => {
+      // Un panel invisible (p. ej. la tarjeta de detalle cerrada) no ocupa espacio
+      if (parseFloat(getComputedStyle(el).opacity) < 0.05) return;
+
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
-
-      // NUEVO: Si estamos en móvil y el elemento está en la mitad inferior, lo ignoramos.
-      // Así el modelo 3D se queda centrado en el fondo y la tarjeta glass flota encima.
-      if (isMobile && r.top > canvas.height / 2) {
-        return;
-      }
+      if (floatBottom && r.top > canvas.height / 2) return;
 
       if (r.width > canvas.width * 0.7) {
         if (r.top - canvas.top < canvas.height / 2) next.top = Math.max(next.top, r.bottom - canvas.top);
@@ -336,13 +371,15 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private insets(): Insets {
     const m = this.measuredInsets;
     const isMobile = this.width < 768;
-    return { 
-      left: m.left + (isMobile ? 10 : 20), 
-      top: m.top + (isMobile ? 20 : 44), 
-      right: m.right + (isMobile ? 10 : 20), 
-      bottom: m.bottom + (isMobile ? 10 : 20) 
+    return {
+      left: m.left + (isMobile ? 10 : 20),
+      top: m.top + (isMobile ? 20 : 44),
+      right: m.right + (isMobile ? 10 : 20),
+      bottom: m.bottom + (isMobile ? 10 : 20)
     };
   }
+
+  /* ───────────── Layout lineal por capas ───────────── */
 
   private computeSlotDefs(steps: WizardStep[]): SlotDef[] {
     const body = steps.slice(1);
@@ -385,14 +422,14 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const padMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.05, depthWrite: false });
       const pad = new THREE.Mesh(padGeometry, padMat);
       pad.position.set(def.x, 0.05, def.z);
-      
+
       pad.add(new THREE.LineSegments(
-        new THREE.EdgesGeometry(padGeometry), 
+        new THREE.EdgesGeometry(padGeometry),
         new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 })
       ));
       this.padsGroup.add(pad);
 
-      this.slots.push({ key: def.key, layer: def.layer, position, pad, padMat, pill: this.createPill(def.layer), node: null });
+      this.slots.push({ key: def.key, layer: def.layer, position, pad, padMat, pill: this.createPill(def.layer), node: null, occluded: false });
       box.expandByPoint(position);
     }
 
@@ -412,21 +449,15 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     const size = this.fitBox.getSize(new THREE.Vector3());
     const center = this.fitBox.getCenter(new THREE.Vector3());
-    
+
     const geometry = new THREE.BoxGeometry(size.x, 0.4, size.z);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.8,
-      metalness: 0.2,
-      transparent: true,
-      opacity: 0.95
-    });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8, metalness: 0.2, transparent: true, opacity: 0.95 });
     const slab = new THREE.Mesh(geometry, mat);
     slab.position.y = -0.2;
     slab.receiveShadow = true;
-    
+
     slab.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry), 
+      new THREE.EdgesGeometry(geometry),
       new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.6 })
     ));
 
@@ -434,6 +465,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.platformGroup.position.set(center.x, 0, center.z);
     this.platformSpawn = 0;
   }
+
+  /* ───────────── Estado → escena ───────────── */
 
   private applyState(s: ViewState): void {
     this.built = s.built;
@@ -469,7 +502,13 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private setSlotPiece(slot: Slot, optionId: string | null, mode: 'preview' | 'confirmed'): void {
     if (!optionId) {
-      this.removeNode(slot);
+      // Sin elegir todavía: silueta holográfica de la pieza que va a ir ahí
+      if (!slot.node || slot.node.optionId !== GHOST) {
+        this.removeNode(slot);
+        slot.node = this.createNode(slot, GHOST);
+      }
+      slot.node.targetOpacity = 0.16;
+      slot.node.baseGlow = 0.5;
       this.refreshPill(slot, null, mode);
       return;
     }
@@ -483,9 +522,14 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.refreshPill(slot, optionId, mode);
   }
 
+  /** Slot con una pieza elegida de verdad (no la silueta). */
+  private isReal(slot: Slot): boolean {
+    return !!slot.node && slot.node.optionId !== GHOST;
+  }
+
   private chainSlots(): Slot[] {
     return COLUMN_ORDER.map(layer => this.slots.find(slot => slot.layer === layer)).filter(
-      (slot): slot is Slot => !!slot && !!slot.node
+      (slot): slot is Slot => !!slot && this.isReal(slot)
     );
   }
 
@@ -501,6 +545,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  /* ───────────── Mouse: conectores y piezas ───────────── */
+
   private updateRay(e: PointerEvent): { x: number; y: number } {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -514,7 +560,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private pickSlot(): Slot | null {
     const bySlot = new Map<THREE.Object3D, Slot>();
     for (const slot of this.slots) {
-      if (slot.node && slot.key !== 'client') bySlot.set(slot.node.group, slot);
+      if (this.isReal(slot) && slot.key !== 'client') bySlot.set(slot.node!.group, slot);
     }
     const hit = this.raycaster.intersectObjects([...bySlot.keys()], true)[0];
     let object: THREE.Object3D | null = hit?.object ?? null;
@@ -546,25 +592,30 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.ngZone.run(() => (slot ? this.detail.toggle(slot.key) : this.detail.close()));
   };
 
+  /* ───────────── Piezas ───────────── */
+
   private createNode(slot: Slot, optionId: string): NodeEntry {
+    const ghost = optionId === GHOST;
     const option = OPTION_CATALOG[optionId];
     const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399;
     const piece: PieceModel = buildPiece(modelKindFor(slot.key, optionId), color, option?.iconUrl);
 
-    piece.group.traverse((child) => {
+    piece.group.traverse(child => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         const oldMat = child.material;
         child.material = new THREE.MeshPhysicalMaterial({
           color: oldMat.color,
           emissive: oldMat.color,
           emissiveIntensity: 0.2,
-          metalness: 0.6,
-          roughness: 0.3,
-          clearcoat: 0.5,
+          metalness: ghost ? 0.1 : 0.6,
+          roughness: ghost ? 0.6 : 0.3,
+          clearcoat: ghost ? 0 : 0.5,
           clearcoatRoughness: 0.2,
           transparent: true,
-          opacity: 0.95
+          opacity: 0.95,
+          depthWrite: !ghost // la silueta no tapa ni parpadea contra lo que hay detrás
         });
+        if (ghost) child.castShadow = false;
         oldMat.dispose();
       }
     });
@@ -572,7 +623,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     piece.group.rotation.y = Math.PI / 4;
     const group = new THREE.Group();
     group.add(piece.group);
-    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z); 
+    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z);
     group.scale.setScalar(0.0001);
     this.nodesGroup.add(group);
 
@@ -596,6 +647,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     slot.pill.el.remove();
   }
 
+  /* ───────────── Etiquetas ───────────── */
+
   private createPill(layer: LayerId): PillRefs {
     const el = document.createElement('div');
     el.className = 'sb3d-pill';
@@ -603,16 +656,19 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     const icon = document.createElement('img');
     icon.className = 'sb3d-pill-icon'; icon.alt = ''; icon.width = 18; icon.height = 18;
-    icon.addEventListener('error', () => (icon.style.display = 'none'));
+    icon.addEventListener('error', () => el.classList.add('no-img'));
+
+    const badge = document.createElement('span');
+    badge.className = 'sb3d-pill-badge';
 
     const text = document.createElement('span');
     text.className = 'sb3d-pill-text';
     const name = document.createElement('strong');
     const small = document.createElement('small');
     text.append(name, small);
-    el.append(icon, text);
+    el.append(icon, badge, text);
     this.labelsHost().nativeElement.appendChild(el);
-    return { el, icon, name, layer: small, width: 120, key: '' };
+    return { el, icon, badge, name, layer: small, width: 120, key: '', icon$: false };
   }
 
   private refreshPill(slot: Slot, optionId: string | null, mode: 'preview' | 'confirmed'): void {
@@ -623,64 +679,117 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     const layerName = LAYER_LABEL[slot.layer] ?? '';
     const ghost = !optionId;
+    const option = optionId ? OPTION_CATALOG[optionId] : undefined;
     pill.el.classList.toggle('is-ghost', ghost);
     pill.el.classList.toggle('is-preview', !ghost && mode === 'preview');
     pill.layer.hidden = ghost;
 
+    let label: string;
     if (ghost) {
-      pill.name.textContent = layerName; pill.icon.style.display = 'none';
+      label = layerName;
+      pill.name.textContent = layerName;
     } else if (slot.key === 'client') {
-      pill.name.textContent = 'Usuario'; pill.layer.textContent = 'Cliente'; pill.icon.style.display = 'none';
+      label = 'Usuario';
+      pill.name.textContent = 'Usuario';
+      pill.layer.textContent = 'Cliente';
     } else {
-      const option = OPTION_CATALOG[optionId];
-      pill.name.textContent = option?.name ?? optionId;
+      label = option?.name ?? optionId!;
+      pill.name.textContent = label;
       pill.layer.textContent = layerName;
-      if (option?.iconUrl) { pill.icon.style.display = ''; pill.icon.src = option.iconUrl; }
-      else { pill.icon.style.display = 'none'; }
     }
+
+    // Logo si existe; si no (o si falla la carga), una inicial dentro del círculo
+    pill.badge.textContent = label.charAt(0).toUpperCase();
+    const hasImg = !ghost && slot.key !== 'client' && !!option?.iconUrl;
+    pill.el.classList.toggle('no-img', !hasImg);
+    if (hasImg) pill.icon.src = option!.iconUrl;
+
+    // El ancho completo se mide siempre con la etiqueta expandida
+    pill.el.classList.remove('is-icon');
     pill.width = Math.ceil(pill.el.getBoundingClientRect().width);
   }
 
-  private updatePills(): void {
-    const ins = this.insets();
-    const items: { slot: Slot; x: number; y: number; w: number }[] = [];
+  /** Marca qué piezas quedan tapadas por otra desde la cámara actual (cada pocos frames). */
+  private updateOcclusion(): void {
+    const reals = this.slots.filter(s => this.isReal(s));
+    this.camera.getWorldDirection(this.tmpDir);
 
     for (const slot of this.slots) {
+      slot.occluded = false;
+      if (!this.isReal(slot)) continue;
+
+      this.rayOrigin.copy(slot.position).setY(PIECE_Y + 1.6).addScaledVector(this.tmpDir, -60);
+      this.occluder.set(this.rayOrigin, this.tmpDir);
+      const others = reals.filter(o => o !== slot).map(o => o.node!.group);
+      const hit = this.occluder.intersectObjects(others, true)[0];
+      slot.occluded = !!hit && hit.distance < 59;
+    }
+  }
+
+  /**
+   * Las etiquetas NO se mueven de su pieza. Si la completa estorba a otra, esa etiqueta se
+   * reduce a un círculo con su logo; la completa solo se muestra en la pieza bajo el mouse,
+   * la seleccionada o la del paso activo (y en móvil, solo ahí).
+   */
+  private updatePills(): void {
+    const ins = this.insets();
+    const mobile = this.width < 768;
+    const selected = this.detail.selected();
+
+    const items: { slot: Slot; x: number; y: number; prio: number }[] = [];
+    for (const slot of this.slots) {
       this.tmp.copy(slot.position).setY(PIECE_Y + 3.7).project(this.camera);
-      
-      if (this.tmp.z > 1) {
+      const x = (this.tmp.x * 0.5 + 0.5) * this.width;
+      const y = (-this.tmp.y * 0.5 + 0.5) * this.height;
+      const inside = this.tmp.z <= 1 && x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
+
+      if (!inside) {
         slot.pill.el.style.opacity = '0';
         continue;
       }
 
-      const x = (this.tmp.x * 0.5 + 0.5) * this.width;
-      const y = (-this.tmp.y * 0.5 + 0.5) * this.height;
-      const inside = x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
-
-      if (inside) items.push({ slot, x, y, w: slot.pill.width });
-      else slot.pill.el.style.opacity = '0';
+      const focused = this.hoverSlot === slot || (this.built && slot.key === selected);
+      const prio = focused ? 3 : slot.key === this.activeKey ? 2 : this.isReal(slot) ? 1 : 0;
+      items.push({ slot, x, y, prio });
     }
 
-    items.sort((a, b) => a.y - b.y);
-    const placed: typeof items = [];
+    // Primero las más importantes: ellas deciden y las demás se adaptan
+    items.sort((a, b) => b.prio - a.prio || a.x - b.x);
+    const placed: Rect[] = [];
+
     for (const item of items) {
-      for (const other of placed) {
-        const overlapX = Math.abs(item.x - other.x) < (item.w + other.w) / 2 + 6;
-        const overlapY = Math.abs(item.y - other.y) < PILL_H + 4;
-        if (overlapX && overlapY) item.y = other.y + PILL_H + 4;
+      const { slot, prio } = item;
+      const pill = slot.pill;
+      const occluded = slot.occluded && prio < 3;
+
+      const place = (full: boolean): Rect => {
+        const w = full ? pill.width : ICON_SIZE;
+        const h = full ? PILL_H : ICON_SIZE;
+        const cx = clamp(item.x, ins.left + w / 2, this.width - ins.right - w / 2);
+        const cy = clamp(item.y - 6, ins.top + h / 2, this.height - ins.bottom - h / 2);
+        return { x: cx - w / 2, y: cy - h / 2, w, h };
+      };
+
+      let full = !occluded && (!mobile || prio >= 2);
+      let rect = place(full);
+      if (full && prio < 3 && placed.some(r => overlaps(r, rect))) {
+        full = false;
+        rect = place(false);
       }
-      placed.push(item);
-    }
+      placed.push(rect);
 
-    for (const item of items) {
-      const x = clamp(item.x, ins.left + item.w / 2, this.width - ins.right - item.w / 2);
-      const y = clamp(item.y, ins.top + PILL_H / 2, this.height - ins.bottom - PILL_H / 2);
-      const el = item.slot.pill.el;
-      el.style.transform = `translate3d(${Math.round(x - item.w / 2)}px, ${Math.round(y - PILL_H / 2)}px, 0)`;
-      const node = item.slot.node;
-      el.style.opacity = node ? String(Math.min(1, node.opacity * 1.25)) : '0.85';
+      const el = pill.el;
+      el.classList.toggle('is-icon', !full);
+      el.classList.toggle('is-occluded', occluded);
+      el.style.zIndex = String(prio);
+      el.style.transform = `translate3d(${Math.round(rect.x)}px, ${Math.round(rect.y)}px, 0)`;
+
+      const base = this.isReal(slot) ? Math.min(1, slot.node!.opacity * 1.25) : full ? 0.8 : 0.6;
+      el.style.opacity = String(occluded ? base * 0.4 : base);
     }
   }
+
+  /* ───────────── Loop ───────────── */
 
   private onResize(): void {
     const el = this.host().nativeElement;
@@ -702,6 +811,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private animate = (): void => {
     this.rafId = requestAnimationFrame(this.animate);
     const t = performance.now();
+    this.frame++;
 
     this.updateCamera();
     this.updateSlots(t);
@@ -710,6 +820,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.connectors.update();
 
     this.renderer.render(this.scene, this.camera);
+    if (this.frame % OCCLUSION_EVERY === 0) this.updateOcclusion();
     this.updatePills();
   };
 
@@ -728,17 +839,16 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.tmp.copy(this.focusTarget).sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(this.tmp);
       this.camera.position.add(this.tmp);
-      
+
       this.camera.zoom += (1.8 - this.camera.zoom) * k;
-      
+
       this.shift.x += (ins.left + freeW / 2 - this.width / 2 - this.shift.x) * k;
       this.shift.y += (ins.top + freeH / 2 - this.height / 2 - this.shift.y) * k;
-      
+
       if (this.controls.target.distanceTo(this.focusTarget) < 0.05) {
         this.focusTarget = null;
       }
-    } 
-    else if (this.autoFit) {
+    } else if (this.autoFit) {
       if (this.slots.length === 0 && this.fitBox.isEmpty()) {
         this.fitBox.min.set(-5, 0, -5);
         this.fitBox.max.set(5, 4, 5);
@@ -765,7 +875,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const aspect = this.width / this.height;
       const zoomW = (2 * FRUSTUM * aspect * (freeW / this.width)) / (maxX - minX);
       const zoomH = (2 * FRUSTUM * (freeH / this.height)) / (maxY - minY);
-      const zoom = clamp(Math.min(zoomW, zoomH), 0.6, 3); 
+      const zoom = clamp(Math.min(zoomW, zoomH), 0.6, 3);
 
       this.fitBox.getCenter(this.tmpCenter);
       this.tmp.copy(this.tmpCenter).sub(this.controls.target).multiplyScalar(k);
@@ -796,26 +906,21 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       node.group.position.y = PIECE_Y + (1 - node.spawn) ** 2 * 4.5 + Math.sin(t * 0.002 + node.phase) * 0.06 * node.spawn;
       node.body.rotation.y = Math.PI / 4 + Math.sin(t * 0.0008 + node.phase) * 0.2;
 
-      const boost = this.built && slot.key === selected ? 2.2 : slot.node && this.hoverSlot === slot ? 1.7 : 1;
+      const boost = this.built && slot.key === selected ? 2.2 : this.hoverSlot === slot ? 1.7 : 1;
       node.opacity += (node.targetOpacity - node.opacity) * 0.12;
       node.glow += (node.baseGlow * boost - node.glow) * 0.12;
-      
-      node.group.traverse((child) => {
+
+      node.group.traverse(child => {
         if (child instanceof THREE.Mesh) {
-           const mat = child.material;
-           if (Array.isArray(mat)) {
-             mat.forEach(m => {
-                m.opacity = node.opacity;
-                if (m instanceof THREE.MeshPhysicalMaterial || m instanceof THREE.MeshStandardMaterial) {
-                  m.emissiveIntensity = 0.2 * node.glow;
-                }
-             });
-           } else if (mat) {
-             mat.opacity = node.opacity;
-             if (mat instanceof THREE.MeshPhysicalMaterial || mat instanceof THREE.MeshStandardMaterial) {
-               mat.emissiveIntensity = 0.2 * node.glow;
-             }
-           }
+          const mat = child.material;
+          const apply = (m: THREE.Material): void => {
+            m.opacity = node.opacity;
+            if (m instanceof THREE.MeshPhysicalMaterial || m instanceof THREE.MeshStandardMaterial) {
+              m.emissiveIntensity = 0.2 * node.glow;
+            }
+          };
+          if (Array.isArray(mat)) mat.forEach(apply);
+          else if (mat) apply(mat);
         }
       });
     }
