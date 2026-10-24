@@ -63,7 +63,7 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
         color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
         background: rgba(15, 23, 42, 0.85); border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
         border-radius: 999px; box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
-        will-change: transform, opacity;
+        will-change: transform, opacity; transition: opacity 0.2s;
       }
       .sb3d-pill-icon { width: 18px; height: 18px; object-fit: contain; }
       .sb3d-pill-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 170px; }
@@ -131,7 +131,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly tmpCenter = new THREE.Vector3();
   private readonly tmpOffset = new THREE.Vector3();
   
-  // NUEVO: Para enfocar la cámara en la pieza seleccionada
   private focusTarget: THREE.Vector3 | null = null;
   private lastSelected: string | null = null;
 
@@ -145,7 +144,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.applyState(s);
     });
 
-    // Escuchar cuando se selecciona una pieza para enfocar la cámara
     effect(() => {
       const selected = this.detail.selected();
       if (!this.ready || !this.built) return;
@@ -156,11 +154,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
           const slot = this.slots.find(s => s.key === selected);
           if (slot) {
             this.focusTarget = slot.position.clone();
-            this.autoFit = false; // Desactivamos el auto-encuadre global para enfocar
+            this.autoFit = false;
           }
         } else {
           this.focusTarget = null;
-          this.autoFit = true; // Volver a encuadrar todo al cerrar
+          this.autoFit = true;
         }
       }
     });
@@ -301,10 +299,17 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private measureInsets(): boolean {
     const canvas = this.host().nativeElement.getBoundingClientRect();
     const next: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
+    const isMobile = this.width < 1024; // lg breakpoint
 
     document.querySelectorAll<HTMLElement>('[data-avoid]').forEach(el => {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
+
+      // NUEVO: Si estamos en móvil y el elemento está en la mitad inferior, lo ignoramos.
+      // Así el modelo 3D se queda centrado en el fondo y la tarjeta glass flota encima.
+      if (isMobile && r.top > canvas.height / 2) {
+        return;
+      }
 
       if (r.width > canvas.width * 0.7) {
         if (r.top - canvas.top < canvas.height / 2) next.top = Math.max(next.top, r.bottom - canvas.top);
@@ -330,7 +335,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private insets(): Insets {
     const m = this.measuredInsets;
-    // En móvil, reducimos el margen para que el 3D tenga más espacio
     const isMobile = this.width < 768;
     return { 
       left: m.left + (isMobile ? 10 : 20), 
@@ -643,6 +647,12 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     for (const slot of this.slots) {
       this.tmp.copy(slot.position).setY(PIECE_Y + 3.7).project(this.camera);
+      
+      if (this.tmp.z > 1) {
+        slot.pill.el.style.opacity = '0';
+        continue;
+      }
+
       const x = (this.tmp.x * 0.5 + 0.5) * this.width;
       const y = (-this.tmp.y * 0.5 + 0.5) * this.height;
       const inside = x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
@@ -714,25 +724,26 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const freeW = Math.max(this.width - ins.left - ins.right, 120);
     const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
-    // Lógica de enfoque a pieza específica
     if (this.focusTarget) {
       this.tmp.copy(this.focusTarget).sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(this.tmp);
       this.camera.position.add(this.tmp);
       
-      // Hacemos zoom in
       this.camera.zoom += (1.8 - this.camera.zoom) * k;
       
-      // Centrar la vista en el espacio libre
       this.shift.x += (ins.left + freeW / 2 - this.width / 2 - this.shift.x) * k;
       this.shift.y += (ins.top + freeH / 2 - this.height / 2 - this.shift.y) * k;
       
       if (this.controls.target.distanceTo(this.focusTarget) < 0.05) {
-        this.focusTarget = null; // Llegamos al objetivo
+        this.focusTarget = null;
       }
     } 
-    // Lógica de encuadre global
-    else if (this.autoFit && this.slots.length) {
+    else if (this.autoFit) {
+      if (this.slots.length === 0 && this.fitBox.isEmpty()) {
+        this.fitBox.min.set(-5, 0, -5);
+        this.fitBox.max.set(5, 4, 5);
+      }
+
       if (this.autoAngle) {
         this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(OFFSET_ISO, k);
         this.camera.position.copy(this.controls.target).add(this.tmpOffset);

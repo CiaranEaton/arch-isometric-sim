@@ -21,8 +21,8 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
         <app-isometric-canvas />
       </div>
 
-      <!-- Viñeta -->
-      <div class="pointer-events-none absolute inset-0 z-[1]" style="background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(2, 4, 10, 0.75) 100%);"></div>
+      <!-- Viñeta suave -->
+      <div class="pointer-events-none absolute inset-0 z-[1]" style="background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(2, 4, 10, 0.6) 100%);"></div>
 
       <!-- Header -->
       <header data-avoid class="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-4 px-4 py-3 lg:px-6 lg:py-4">
@@ -36,7 +36,7 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
         <!-- VISTA WIZARD (Configuración) -->
         <div
           data-avoid
-          class="absolute inset-x-0 bottom-0 z-20 max-h-[55dvh] overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-slate-950/80 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-none lg:bg-transparent lg:pb-0 lg:backdrop-blur-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          class="absolute inset-x-0 bottom-0 z-20 h-[65dvh] overflow-y-auto overscroll-contain rounded-t-3xl border-t border-white/10 bg-slate-900/50 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:h-auto lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-none lg:bg-transparent lg:pb-0 lg:backdrop-blur-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
           <app-architecture-wizard />
         </div>
@@ -57,8 +57,8 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
             </button>
           </div>
 
-          <!-- Lista de Pasos -->
-          <div class="pointer-events-auto w-full rounded-t-3xl border-t border-white/10 bg-slate-950/80 px-4 pt-4 pb-6 backdrop-blur-xl lg:rounded-none lg:border-none lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+          <!-- Lista de Pasos (Cristal) -->
+          <div class="pointer-events-auto w-full rounded-t-3xl border-t border-white/10 bg-slate-900/50 px-4 pt-4 pb-6 backdrop-blur-2xl lg:rounded-none lg:border-none lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
             <!-- En móvil es un scroll horizontal, en escritorio vertical -->
             <div class="relative flex w-full flex-row gap-3 overflow-x-auto lg:flex-col lg:gap-4 lg:overflow-visible [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               
@@ -91,7 +91,7 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
           </div>
         </nav>
 
-        <!-- Tarjeta de Detalle (Animada) -->
+        <!-- Tarjeta de Detalle (Cristal) -->
         <div
           data-avoid
           class="absolute inset-x-0 bottom-0 z-30 flex max-h-[60dvh] pb-[env(safe-area-inset-bottom)] lg:inset-x-auto lg:bottom-auto lg:right-6 lg:top-1/2 lg:-translate-y-1/2 lg:h-fit lg:max-h-[85vh] lg:w-[380px] lg:pb-0 transition-all duration-300 ease-in-out pointer-events-none"
