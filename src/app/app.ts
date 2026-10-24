@@ -6,7 +6,6 @@ import { LayerId, layerColor } from './models/architecture.models';
 import { ArchitectureStateService } from './services/architecture-state.service';
 import { PieceDetailService } from './services/piece-detail.service';
 
-/** Orden del flujo de izquierda a derecha en la escena 3D. */
 const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data', 'infra'];
 
 @Component({
@@ -16,16 +15,13 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
   imports: [IsometricCanvasComponent, ArchitectureWizardComponent, PieceDetailComponent],
   template: `
     <main class="relative h-[100dvh] w-full overflow-hidden font-sans text-slate-100">
-      <!-- 3D: capa de fondo a pantalla completa. Recibe el mouse (órbita, hover y clic en piezas). -->
+      <!-- 3D Canvas -->
       <div class="absolute inset-0 z-0">
         <app-isometric-canvas />
       </div>
 
-      <!-- Viñeta suave para que los paneles se lean sobre el 3D -->
-      <div
-        class="pointer-events-none absolute inset-0 z-[1]"
-        style="background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(2, 4, 10, 0.75) 100%);"
-      ></div>
+      <!-- Viñeta -->
+      <div class="pointer-events-none absolute inset-0 z-[1]" style="background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(2, 4, 10, 0.75) 100%);"></div>
 
       <!-- Header -->
       <header data-avoid class="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-4 px-4 py-3 lg:px-6 lg:py-4">
@@ -36,74 +32,69 @@ const FLOW_ORDER: LayerId[] = ['workspace', 'frontend', 'auth', 'backend', 'data
       </header>
 
       @if (!state.isBuilt()) {
-        <!-- Escritorio: panel a la izquierda. Móvil: hoja inferior; el 3D queda arriba. -->
-        <div
-          data-avoid
-          class="absolute inset-x-0 bottom-0 z-20 max-h-[58dvh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:max-h-none lg:w-[480px] lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-        >
+        <!-- Wizard inicial (igual que antes) -->
+        <div data-avoid class="absolute inset-x-0 bottom-0 z-20 max-h-[58dvh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] lg:inset-x-auto lg:bottom-6 lg:left-6 lg:top-[84px] lg:max-h-none lg:w-[480px] lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <app-architecture-wizard />
         </div>
       } @else {
-        <!-- Vista final: sin tarjetas fijas; el detalle de cada pieza aparece solo al hacer clic -->
-        <nav
-          data-avoid
-          aria-label="Flujo de tu arquitectura"
-          class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:px-6 lg:pb-5"
-        >
-          <!-- Contenedor con efecto cristal -->
-          <div class="pointer-events-auto mx-auto flex max-w-6xl items-center gap-3 rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-2 shadow-2xl backdrop-blur-xl">
-            
-            <!-- Lista de pasos con scroll oculto y gradientes laterales -->
-            <div class="relative flex min-w-0 flex-1 items-center">
-              <!-- Gradiente izquierdo (indica que hay scroll) -->
-              <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-slate-950/90 to-transparent"></div>
-              
-              <ol class="flex w-full items-center gap-1.5 overflow-x-auto px-2 py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x scroll-smooth">
-                @for (item of flow(); track item.step.category; let last = $last) {
-                  <li class="flex shrink-0 snap-start items-center gap-1.5">
-                    <button
-                      type="button"
-                      class="flex items-center gap-2 rounded-full border bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-all hover:bg-slate-800 hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                      [style.border-color]="layerColor(item.step.layer) + '80'"
-                      [style.box-shadow]="detail.selected() === item.step.category ? '0 0 12px ' + layerColor(item.step.layer) + '40' : 'none'"
-                      [attr.aria-pressed]="detail.selected() === item.step.category"
-                      [attr.aria-label]="item.step.menuTitle + ': ' + item.option.name + '. Ver detalle'"
-                      (click)="detail.toggle(item.step.category)"
-                    >
-                      <span class="h-2 w-2 rounded-full" [style.background]="layerColor(item.step.layer)" aria-hidden="true"></span>
-                      {{ item.option.name }}
-                    </button>
-                    @if (!last) {
-                      <span class="text-slate-600 text-xs" aria-hidden="true">→</span>
-                    }
-                  </li>
-                }
-              </ol>
-
-              <!-- Gradiente derecho -->
-              <div class="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-slate-950/90 to-transparent"></div>
-            </div>
-
-            <!-- Botón Reconfigurar -->
-            <button
-              type="button"
-              class="shrink-0 rounded-xl border border-cyan-400/40 bg-cyan-950/30 px-4 py-2 text-sm font-semibold text-cyan-300 transition-all hover:bg-cyan-900/50 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-              (click)="reconfigure()"
-            >
+        <!-- NUEVO: Wizard Vertical (Izquierda) -->
+        <nav data-avoid aria-label="Flujo de tu arquitectura" class="pointer-events-none absolute left-6 top-[100px] bottom-6 z-20 flex w-[280px] flex-col">
+          <!-- Botón Reconfigurar arriba -->
+          <div class="pointer-events-auto mb-6">
+            <button type="button" class="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-cyan-300 backdrop-blur-md transition-all hover:bg-cyan-900/50 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" (click)="reconfigure()">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
               Reconfigurar
             </button>
           </div>
+
+          <!-- Lista Vertical de Pasos -->
+          <div class="pointer-events-auto relative flex-1 overflow-y-auto pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <!-- Línea conectora vertical -->
+            <div class="absolute left-[19px] top-4 bottom-4 w-px bg-slate-700/50" aria-hidden="true"></div>
+            
+            <ol class="flex flex-col gap-4">
+              @for (item of flow(); track item.step.category) {
+                <li class="relative flex items-center gap-3">
+                  <!-- Círculo indicador -->
+                  <button
+                    type="button"
+                    class="group relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 bg-slate-900/90 backdrop-blur-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    [style.border-color]="layerColor(item.step.layer)"
+                    [style.box-shadow]="detail.selected() === item.step.category ? '0 0 15px ' + layerColor(item.step.layer) + '80' : 'none'"
+                    [attr.aria-pressed]="detail.selected() === item.step.category"
+                    (click)="detail.toggle(item.step.category)"
+                  >
+                    <img [src]="item.option.iconUrl" class="h-5 w-5 object-contain" alt="" />
+                  </button>
+
+                  <!-- Info del paso (SIN card, solo texto flotante) -->
+                  <button
+                    type="button"
+                    class="flex flex-col items-start text-left transition-all hover:translate-x-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    (click)="detail.toggle(item.step.category)"
+                  >
+                    <span class="text-[10px] font-bold uppercase tracking-widest" [style.color]="layerColor(item.step.layer)">{{ item.step.menuTitle }}</span>
+                    <span class="text-sm font-semibold text-slate-200 leading-tight">{{ item.option.name }}</span>
+                  </button>
+                </li>
+              }
+            </ol>
+          </div>
         </nav>
 
-        <!-- Tarjeta de detalle: Flotante, centrada verticalmente en escritorio -->
-        @if (detail.selected()) {
-          <div
-            data-avoid
-            class="absolute inset-x-0 bottom-0 z-30 flex max-h-[55dvh] pb-[env(safe-area-inset-bottom)] lg:inset-x-auto lg:bottom-auto lg:right-6 lg:top-1/2 lg:-translate-y-1/2 lg:h-fit lg:max-h-[85vh] lg:w-[380px] lg:pb-0 animate-in fade-in slide-in-from-right-4 duration-300"
-          >
-            <app-piece-detail class="flex min-h-0 w-full" />
-          </div>
-        }
+        <!-- NUEVO: Tarjeta de detalle con animación (NO SALTA) -->
+        <!-- Mantenemos el div en el DOM y controlamos su opacidad con las clases de Tailwind -->
+        <div
+          data-avoid
+          class="absolute inset-x-0 bottom-0 z-30 flex max-h-[55dvh] pb-[env(safe-area-inset-bottom)] lg:inset-x-auto lg:bottom-auto lg:right-6 lg:top-1/2 lg:-translate-y-1/2 lg:h-fit lg:max-h-[85vh] lg:w-[380px] lg:pb-0 transition-all duration-500 ease-in-out pointer-events-none"
+          [class.opacity-0]="!detail.selected()"
+          [class.translate-x-10]="!detail.selected()"
+          [class.opacity-100]="detail.selected()"
+          [class.translate-x-0]="detail.selected()"
+          [class.!pointer-events-auto]="detail.selected()"
+        >
+          <app-piece-detail class="flex min-h-0 w-full" />
+        </div>
       }
     </main>
   `

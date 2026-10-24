@@ -30,12 +30,11 @@ import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 /* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
-// Forzamos un ángulo perfecto de maqueta isométrica
 const OFFSET_ISO = new THREE.Vector3(15, 15, 15); 
 const NODE_BASE_Y = 0.95;
 const SPACING_X = 5.4;
 const SPACING_Z = 4.4;
-const PLATFORM_MARGIN = 4.0; // Un poco más de margen para que parezca una base sólida
+const PLATFORM_MARGIN = 4.0;
 const PILL_H = 34;
 const PARTICLE_COUNT = 100;
 const INSET_CHECK_EVERY = 15;
@@ -91,7 +90,7 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
         position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 0.45rem;
         height: 34px; padding: 0 0.8rem 0 0.5rem; white-space: nowrap; opacity: 0;
         color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
-        background: rgba(15, 23, 42, 0.85); /* Slate-900 más sólido para look de fábrica */
+        background: rgba(15, 23, 42, 0.85);
         border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
         border-radius: 999px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
@@ -186,7 +185,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       dom.addEventListener('pointerdown', this.onPointerDown);
       dom.addEventListener('pointerup', this.onPointerUp);
 
-      this.createFactoryGrid(); // Nuevo grid tipo fábrica
+      this.createFactoryGrid();
       this.createParticles();
 
       this.measureInsets();
@@ -229,7 +228,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const aspect = this.width / this.height;
 
     this.scene = new THREE.Scene();
-    // Fondo ligeramente más claro para dar sensación de sala (opcional, tu tema es oscuro)
     this.scene.fog = new THREE.FogExp2(0x020617, 0.02); 
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
@@ -237,7 +235,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.camera.position.copy(OFFSET_ISO);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x000000, 0); // Mantenemos transparencia para que se vea tu fondo de la app
+    this.renderer.setClearColor(0x000000, 0); 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(this.width, this.height);
     this.renderer.shadowMap.enabled = true;
@@ -253,8 +251,9 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.minZoom = 0.3;
-    this.controls.maxZoom = 4;
+    this.controls.minZoom = 0.6; // Previene zoom out infinito
+    this.controls.maxZoom = 3;   // Previene zoom in infinito
+    this.controls.enablePan = false; // Previene desplazamiento infinito
     this.controls.minPolarAngle = 0.25;
     this.controls.maxPolarAngle = Math.PI / 2.15;
     this.controls.enabled = false;
@@ -263,19 +262,18 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.camera.lookAt(this.controls.target);
     this.controls.update();
 
-    // Iluminación de "Fábrica": Sombras fuertes, luz direccional clara
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     
-    const key = new THREE.DirectionalLight(0xffffff, 1.8); // Luz blanca pura
+    const key = new THREE.DirectionalLight(0xffffff, 1.8);
     key.position.set(20, 30, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0005;
-    key.shadow.normalBias = 0.02; // Evita artefactos en las sombras
+    key.shadow.normalBias = 0.02;
     Object.assign(key.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 100 });
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0x22d3ee, 0.5); // Un toque cian de relleno
+    const fill = new THREE.DirectionalLight(0x22d3ee, 0.5);
     fill.position.set(-20, 10, -20);
     this.scene.add(fill);
 
@@ -283,7 +281,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private createFactoryGrid(): void {
-    // Un grid más grande y tenue que se pierde en la oscuridad
     const grid = new THREE.GridHelper(100, 100, 0x0f766e, 0x0f766e);
     grid.position.y = -0.5;
     const mat = grid.material as THREE.LineBasicMaterial;
@@ -381,13 +378,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const position = new THREE.Vector3(def.x, 0, def.z);
       const color = LAYERS.find(l => l.id === def.layer)?.color ?? 0x34d399;
 
-      // El "Pad" (base donde se posa la máquina): ahora parece una placa metálica
       const padGeometry = new THREE.BoxGeometry(3.8, 0.1, 3.8);
       const padMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.05, depthWrite: false });
       const pad = new THREE.Mesh(padGeometry, padMat);
       pad.position.set(def.x, 0.05, def.z);
       
-      // Borde brillante del pad
       pad.add(new THREE.LineSegments(
         new THREE.EdgesGeometry(padGeometry), 
         new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 })
@@ -406,7 +401,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.layoutRoute = routeId;
   }
 
-  /** La plataforma base: ahora es el "suelo de la fábrica" sólido */
   private buildPlatform(): void {
     this.platformGroup.children.slice().forEach(child => {
       this.platformGroup.remove(child);
@@ -416,10 +410,9 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const size = this.fitBox.getSize(new THREE.Vector3());
     const center = this.fitBox.getCenter(new THREE.Vector3());
     
-    // Suelo sólido
     const geometry = new THREE.BoxGeometry(size.x, 0.4, size.z);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a, // Slate oscuro (concreto/metal)
+      color: 0x0f172a,
       roughness: 0.8,
       metalness: 0.2,
       transparent: true,
@@ -429,7 +422,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     slab.position.y = -0.2;
     slab.receiveShadow = true;
     
-    // Borde perimetral brillante
     slab.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry), 
       new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.6 })
@@ -554,20 +546,19 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399;
     const piece: PieceModel = buildPiece(modelKindFor(slot.key, optionId), color, option?.iconUrl);
 
-    // Material de "Máquina de Fábrica": Menos transparente, más metálico, con un brillo interno (emissive)
     piece.group.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         const oldMat = child.material;
         child.material = new THREE.MeshPhysicalMaterial({
           color: oldMat.color,
-          emissive: oldMat.color,       // Usamos el color de la capa para el brillo
-          emissiveIntensity: 0.2,       // Brillo sutil de "encendido"
-          metalness: 0.6,               // Más metálico
-          roughness: 0.3,               // Un poco más rugoso para que no parezca gelatina
-          clearcoat: 0.5,               // Brillo exterior
+          emissive: oldMat.color,
+          emissiveIntensity: 0.2,
+          metalness: 0.6,
+          roughness: 0.3,
+          clearcoat: 0.5,
           clearcoatRoughness: 0.2,
           transparent: true,
-          opacity: 0.95                 // Casi opaco
+          opacity: 0.95
         });
         oldMat.dispose();
       }
@@ -576,13 +567,12 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     piece.group.rotation.y = Math.PI / 4;
     const group = new THREE.Group();
     group.add(piece.group);
-    // La hacemos caer sobre el pad
     group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z); 
     group.scale.setScalar(0.0001);
     this.nodesGroup.add(group);
 
     return {
-      optionId, group, body: piece.group, materials: piece.materials, // Nota: si los materiales se reemplazan, esto puede quedar desactualizado, pero el animate itera sobre el group.
+      optionId, group, body: piece.group, materials: piece.materials,
       spawn: 0, phase: Math.random() * Math.PI * 2, opacity: 0, targetOpacity: 1, glow: 1, baseGlow: 1
     };
   }
@@ -725,7 +715,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
       if (this.autoAngle) {
-        // Siempre usamos el ángulo isométrico para mantener el look de "maqueta"
         this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(OFFSET_ISO, k);
         this.camera.position.copy(this.controls.target).add(this.tmpOffset);
       }
@@ -746,7 +735,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const aspect = this.width / this.height;
       const zoomW = (2 * FRUSTUM * aspect * (freeW / this.width)) / (maxX - minX);
       const zoomH = (2 * FRUSTUM * (freeH / this.height)) / (maxY - minY);
-      const zoom = clamp(Math.min(zoomW, zoomH), 0.3, 3);
+      const zoom = clamp(Math.min(zoomW, zoomH), 0.6, 3); 
 
       this.fitBox.getCenter(this.tmpCenter);
       this.tmp.copy(this.tmpCenter).sub(this.controls.target).multiplyScalar(k);
@@ -788,7 +777,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
              mat.forEach(m => {
                 m.opacity = node.opacity;
                 if (m instanceof THREE.MeshPhysicalMaterial || m instanceof THREE.MeshStandardMaterial) {
-                  m.emissiveIntensity = 0.2 * node.glow; // Base glow ahora es 0.2
+                  m.emissiveIntensity = 0.2 * node.glow;
                 }
              });
            } else if (mat) {
