@@ -295,7 +295,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
 
-      // CORREGIDO: Ahora medimos el panel inferior en móvil para empujar la cámara hacia arriba
       if (r.width > canvas.width * 0.7) {
         if (r.top - canvas.top < canvas.height / 2) next.top = Math.max(next.top, r.bottom - canvas.top);
         else next.bottom = Math.max(next.bottom, canvas.bottom - r.top);
@@ -320,16 +319,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
   private insets(): Insets {
     const m = this.measuredInsets;
-    const isMobile = this.width < 768;
-    return { 
-      left: m.left + (isMobile ? 10 : 20), 
-      top: m.top + (isMobile ? 20 : 44), 
-      right: m.right + (isMobile ? 10 : 20), 
-      bottom: m.bottom + (isMobile ? 10 : 20) 
-    };
+    return { left: m.left + 20, top: m.top + 44, right: m.right + 20, bottom: m.bottom + 20 };
   }
-
-  // ... (El resto de métodos: computeSlotDefs, rebuildLayout, buildPlatform, applyState, setSlotPiece, chainSlots, planLinks, updateRay, pickSlot, onPointer..., createNode, removeNode, destroySlot, createPill, refreshPill, updatePills, onResize, animate, updateCamera, updateSlots, updatePlatform, updateParticles, disposeObject se mantienen exactamente igual que en la respuesta anterior) ...
 
   private computeSlotDefs(steps: WizardStep[]): SlotDef[] {
     const body = steps.slice(1);
@@ -714,15 +705,15 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     if (this.focusTarget) {
       this.tmp.copy(this.focusTarget).sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(this.tmp);
-      this.camera.position.add(this.tmp);
       
-      this.camera.zoom += (1.8 - this.camera.zoom) * k;
+      this.camera.zoom += (1.5 - this.camera.zoom) * k;
       
       this.shift.x += (ins.left + freeW / 2 - this.width / 2 - this.shift.x) * k;
       this.shift.y += (ins.top + freeH / 2 - this.height / 2 - this.shift.y) * k;
       
-      if (this.controls.target.distanceTo(this.focusTarget) < 0.05) {
+      if (this.controls.target.distanceTo(this.focusTarget) < 0.1) {
         this.focusTarget = null;
+        this.autoFit = false;
       }
     } 
     else if (this.autoFit) {

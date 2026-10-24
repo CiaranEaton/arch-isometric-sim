@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, ElementRef, effect, inject } from '@angular/core';
-import { layerColor } from '../../models/architecture.models';
+import { Affinity, StepOption, layerColor } from '../../models/architecture.models';
 import { ArchitectureStateService } from '../../services/architecture-state.service';
 
 @Component({
@@ -16,36 +16,25 @@ export class ArchitectureWizardComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   constructor() {
-    // Mantiene visible el paso activo cuando el stepper desborda
     effect(() => {
       this.state.step();
       requestAnimationFrame(() => this.revealCurrentStep());
     });
   }
 
-  /** Flechas / Home / End dentro de la lista de opciones */
   onRadioKeydown(event: KeyboardEvent): void {
     const options = this.state.activeStep().options;
-    const current = Math.max(0, options.findIndex(o => o.id === this.state.selectedId()));
+    const current = Math.max(0, options.findIndex((o: StepOption) => o.id === this.state.selectedId()));
     let next = current;
 
     switch (event.key) {
       case 'ArrowDown':
-      case 'ArrowRight':
-        next = (current + 1) % options.length;
-        break;
+      case 'ArrowRight': next = (current + 1) % options.length; break;
       case 'ArrowUp':
-      case 'ArrowLeft':
-        next = (current - 1 + options.length) % options.length;
-        break;
-      case 'Home':
-        next = 0;
-        break;
-      case 'End':
-        next = options.length - 1;
-        break;
-      default:
-        return;
+      case 'ArrowLeft': next = (current - 1 + options.length) % options.length; break;
+      case 'Home': next = 0; break;
+      case 'End': next = options.length - 1; break;
+      default: return;
     }
 
     event.preventDefault();
@@ -53,18 +42,37 @@ export class ArchitectureWizardComponent {
     this.host.nativeElement.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
   }
 
-  /** Si el ícono del CDN no carga, se oculta */
   onIconError(event: Event): void {
     (event.target as HTMLImageElement).style.display = 'none';
   }
 
-  // Métodos para los botones de navegación
-  next(): void {
-    this.state.step.set(this.state.step() + 1);
+    next(): void {
+    // Si estamos en el último paso, marcamos la arquitectura como construida
+    if (this.state.step() === this.state.steps().length - 1) {
+      this.state.isBuilt.set(true);
+    } else {
+      this.state.step.set(this.state.step() + 1);
+    }
   }
 
   prev(): void {
     this.state.step.set(this.state.step() - 1);
+  }
+
+  getSelected(): StepOption | undefined {
+    return this.state.activeStep().options.find((o: StepOption) => o.id === this.state.selectedId());
+  }
+
+  // NUEVO: Calcula el "Por qué encaja" para mostrarlo en el wizard
+  getSelectedReason(option: StepOption): string {
+    const context: Record<string, string> = { route: this.state.routeId(), ...this.state.selection() };
+    let best: Affinity | null = null;
+
+    for (const affinity of option.affinities ?? []) {
+      const matches = Object.entries(affinity.when).every(([key, allowed]) => allowed.includes(context[key]));
+      if (matches && (!best || affinity.score > best.score)) best = affinity;
+    }
+    return best?.reason ?? '';
   }
 
   private revealCurrentStep(): void {

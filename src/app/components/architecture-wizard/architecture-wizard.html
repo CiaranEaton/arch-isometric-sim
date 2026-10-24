@@ -1,94 +1,86 @@
-<section class="sb-panel" aria-label="Configurador de stack">
-  <p class="sb-live" aria-live="polite">
-    Paso {{ state.step() + 1 }} de {{ state.steps().length }}: {{ state.activeStep().title }}
-  </p>
+<div class="sb-panel">
+  <!-- Anuncio para lectores de pantalla -->
+  <p class="sb-live" aria-live="polite">Paso {{ state.step() + 1 }}: {{ state.activeStep().title }}</p>
 
-  <nav class="sb-stepper" aria-label="Pasos de la configuración">
+  <!-- Stepper -->
+  <div class="sb-stepper">
     <ol class="sb-steps">
-      @for (s of state.steps(); track s.category; let i = $index) {
+      @for (step of state.steps(); track step.category; let i = $index) {
         <li>
           <button
             type="button"
             class="sb-step"
-            [class.is-current]="i === state.step()"
             [class.is-done]="i < state.step()"
+            [class.is-current]="i === state.step()"
+            [disabled]="i > state.step()"
             [attr.aria-current]="i === state.step() ? 'step' : null"
-            [attr.aria-label]="'Paso ' + (i + 1) + ': ' + s.menuTitle"
-            [attr.title]="s.menuTitle"
-            [disabled]="i > state.reached()"
-            [style.--layer]="layerColor(s.layer)"
-            (click)="state.goToStep(i)"
+            [style.--layer]="layerColor(step.layer)"
+            (click)="i < state.step() && state.step.set(i)"
           >
-            <span class="sb-step-num" aria-hidden="true">{{ i + 1 }}</span>
-            <span class="sb-step-name" aria-hidden="true">{{ s.menuTitle }}</span>
+            <span class="sb-step-num">{{ i + 1 }}</span>
+            <span class="sb-step-name">{{ step.menuTitle }}</span>
           </button>
         </li>
       }
     </ol>
-  </nav>
+  </div>
 
-  @for (step of [state.activeStep()]; track step.category) {
-    <div class="sb-body" [class.from-left]="state.direction() === -1">
-      <header class="sb-head">
-        <h2 class="sb-title">{{ step.title }}</h2>
-        <p class="sb-subtitle">{{ step.subtitle }}</p>
-      </header>
-
-      <div
-        class="sb-options"
-        role="radiogroup"
-        [attr.aria-label]="step.title"
-        (keydown)="onRadioKeydown($event)"
-      >
-        @for (option of step.options; track option.id) {
-          <button
-            type="button"
-            role="radio"
-            class="sb-option"
-            [class.is-selected]="state.selectedId() === option.id"
-            [attr.aria-checked]="state.selectedId() === option.id"
-            [attr.tabindex]="state.selectedId() === option.id ? 0 : -1"
-            (click)="state.select(option.id)"
-          >
-            <span class="sb-option-icon">
-              <img [src]="option.iconUrl" alt="" width="24" height="24" loading="lazy" (error)="onIconError($event)" />
-            </span>
-            <span class="sb-option-name">{{ option.name }}</span>
-            @if (state.recommendedId() === option.id) {
-              <span class="sb-badge">Recomendado</span>
-            }
-            <span class="sb-radio" aria-hidden="true"></span>
-          </button>
-        }
-      </div>
-
-      <!-- Detalle: alto fijo en escritorio y a la medida en móvil; el texto se recorta en vez de hacer scroll -->
-      <div class="sb-detail" role="group" aria-label="Detalle de la opción seleccionada">
-        @for (option of [state.selectedOption()]; track option.id) {
-          <div class="sb-detail-inner">
-            <p class="sb-desc" [attr.title]="option.description">{{ option.description }}</p>
-
-            @if (state.fits()[option.id]?.reason; as reason) {
-              <p class="sb-reason" [attr.title]="reason"><strong>Por qué encaja:</strong> {{ reason }}</p>
-            }
-
-            <ul class="sb-tags">
-              @for (tag of option.tags; track tag) {
-                <li class="sb-tag">{{ tag }}</li>
-              }
-            </ul>
-          </div>
-        }
-      </div>
+  <!-- Cuerpo (Título y Opciones) -->
+  <div class="sb-body">
+    <div class="sb-head">
+      <h2 class="sb-title">{{ state.activeStep().title }}</h2>
+      <p class="sb-subtitle">{{ state.activeStep().subtitle }}</p>
     </div>
-  }
 
-  <footer class="sb-actions">
-    <button type="button" class="sb-btn sb-btn-ghost" [disabled]="state.step() === 0" (click)="state.back()">
+    <!-- Lista de opciones -->
+    <div class="sb-options" role="radiogroup" (keydown)="onRadioKeydown($event)">
+      @for (option of state.activeStep().options; track option.id) {
+        <button
+          type="button"
+          role="radio"
+          class="sb-option"
+          [class.is-selected]="state.selectedId() === option.id"
+          [attr.aria-checked]="state.selectedId() === option.id"
+          tabindex="0"
+          (click)="state.select(option.id)"
+        >
+          <span class="sb-option-icon">
+            <img [src]="option.iconUrl" (error)="onIconError($event)" alt="" />
+          </span>
+          <span class="sb-option-name">{{ option.name }}</span>
+          <span class="sb-radio" aria-hidden="true"></span>
+        </button>
+      }
+    </div>
+
+    <!-- Detalle de la opción seleccionada -->
+    @if (getSelected(); as selected) {
+      <div class="sb-detail">
+        <div class="sb-detail-inner">
+          <p class="sb-desc">{{ selected.description }}</p>
+          
+          <!-- CORREGIDO: Usando el método para calcular el reason -->
+          @if (getSelectedReason(selected); as reason) {
+            <p class="sb-reason"><strong>Por qué encaja:</strong> {{ reason }}</p>
+          }
+          
+          <ul class="sb-tags">
+            @for (tag of selected.tags; track tag) {
+              <li class="sb-tag">{{ tag }}</li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Acciones -->
+  <div class="sb-actions">
+    <button type="button" class="sb-btn sb-btn-ghost" [disabled]="state.step() === 0" (click)="prev()">
       Volver
     </button>
-    <button type="button" class="sb-btn sb-btn-primary" (click)="state.next()">
-      {{ state.isLastStep() ? 'Ver resultado' : 'Continuar' }}
+    <button type="button" class="sb-btn sb-btn-primary" [disabled]="!state.selectedId()" (click)="next()">
+      {{ state.step() === state.steps().length - 1 ? 'Ver resultado' : 'Continuar' }}
     </button>
-  </footer>
-</section>
+  </div>
+</div>
