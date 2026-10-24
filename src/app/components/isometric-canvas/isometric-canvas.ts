@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'; // <-- IMPORT NUEVO
 import {
   ArchitectureSelection,
   LAYERS,
@@ -29,9 +30,7 @@ import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 /* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
-/** Isométrica clásica: mejor para zonas libres estrechas (móvil). */
 const OFFSET_ISO = new THREE.Vector3(18, 18, 18);
-/** Más de frente: la cadena queda casi horizontal, mejor para zonas libres anchas (escritorio). */
 const OFFSET_WIDE = new THREE.Vector3(9, 17, 21);
 const NODE_BASE_Y = 0.95;
 const SPACING_X = 5.4;
@@ -39,9 +38,8 @@ const SPACING_Z = 4.4;
 const PLATFORM_MARGIN = 3.4;
 const PILL_H = 34;
 const PARTICLE_COUNT = 140;
-const INSET_CHECK_EVERY = 15; // frames entre mediciones de los paneles
+const INSET_CHECK_EVERY = 15;
 
-/** Columnas de la línea de ensamble, de izquierda a derecha. Infra y workspace no son columnas. */
 const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
 
 const LAYER_LABEL: Record<string, string> = {
@@ -49,7 +47,7 @@ const LAYER_LABEL: Record<string, string> = {
   workspace: 'Estructura'
 };
 
-const PIECE_Y = 0.1; // base de cada pieza sobre la plataforma
+const PIECE_Y = 0.1;
 
 /* ───────────────────────── Tipos internos ───────────────────────── */
 
@@ -88,7 +86,6 @@ interface NodeEntry {
   opacity: number;
   targetOpacity: number;
   glow: number;
-  /** Brillo de reposo (preview > confirmada); hover y selección lo multiplican. */
   baseGlow: number;
 }
 
@@ -123,7 +120,7 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
   selector: 'app-isometric-canvas',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  encapsulation: ViewEncapsulation.None, // las etiquetas se crean por código: necesitan estilos globales al componente
+  encapsulation: ViewEncapsulation.None,
   styles: [
     `
       app-isometric-canvas { display: block; position: relative; width: 100%; height: 100%; }
@@ -145,7 +142,6 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
       .sb3d-pill.is-ghost { background: rgba(3, 9, 14, 0.55); border-style: dashed; box-shadow: none; color: #94a3b8; }
       .sb3d-pill.is-preview { box-shadow: 0 0 0 1px var(--layer), 0 0 20px color-mix(in srgb, var(--layer) 40%, transparent); }
 
-      /* Conectores: tooltip al pasar el mouse y leyenda de protocolos (se aparta de los paneles) */
       .sb3d-tip {
         position: absolute; left: 0; top: 0; opacity: 0; padding: 4px 10px; white-space: nowrap;
         font-size: 12px; color: #e2e8f0; background: rgba(3, 9, 14, 0.92);
@@ -181,7 +177,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     selectedId: this.state.selectedId()
   }));
 
-  // three.js
   private scene!: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
   private renderer!: THREE.WebGLRenderer;
@@ -192,51 +187,43 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private width = 1;
   private height = 1;
 
-  // grupos
   private readonly platformGroup = new THREE.Group();
   private readonly padsGroup = new THREE.Group();
   private readonly nodesGroup = new THREE.Group();
   private particles!: THREE.Points;
   private readonly particleSpeeds = new Float32Array(PARTICLE_COUNT);
 
-  // conectores (tubos, flechas, partículas, tooltip y leyenda)
   private connectors!: ConnectorLayer;
   private readonly raycaster = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
 
-  // layout
   private slots: Slot[] = [];
   private layoutRoute = '';
   private readonly fitBox = new THREE.Box3();
   private platformSpawn = 1;
 
-  // estado de vista
   private built = false;
   private activeKey: string | null = null;
   private hoverSlot: Slot | null = null;
   private readonly downPos = new THREE.Vector2();
 
-  // cámara
-  private autoFit = true; // reencuadra zoom, foco y desplazamiento
-  private autoAngle = true; // elige el ángulo según la proporción de la zona libre
+  private autoFit = true;
+  private autoAngle = true;
   private readonly shift = new THREE.Vector2(0, 0);
   private readonly tmp = new THREE.Vector3();
   private readonly tmpCenter = new THREE.Vector3();
   private readonly tmpOffset = new THREE.Vector3();
 
-  // zonas ocupadas por paneles (header, wizard, barra inferior, detalle), medidas del DOM
   private measuredInsets: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
   private insetTick = 0;
 
   constructor() {
     effect(() => {
-      const s = this.viewState(); // se lee siempre para que el effect quede suscrito
+      const s = this.viewState();
       if (!this.ready) return;
       this.applyState(s);
     });
   }
-
-  /* ───────────── Ciclo de vida ───────────── */
 
   ngAfterViewInit(): void {
     this.ngZone.runOutsideAngular(() => {
@@ -253,7 +240,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       this.createGrid();
       this.createParticles();
 
-      this.measureInsets(); // primera medición antes de encuadrar
+      this.measureInsets();
       this.applyInsetVars();
 
       this.ready = true;
@@ -291,8 +278,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  /* ───────────── Inicialización ───────────── */
-
   private initThree(): void {
     const el = this.host().nativeElement;
     this.width = el.clientWidth || window.innerWidth;
@@ -302,7 +287,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.scene = new THREE.Scene();
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
-    this.camera.zoom = 0.7; // intro: arranca lejos y se encuadra solo
+    this.camera.zoom = 0.7;
     this.camera.position.copy(OFFSET_ISO);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -311,37 +296,43 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.renderer.setSize(this.width, this.height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    // ── NUEVO: Entorno para reflejos de cristal (PBR) ──
+    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    
     this.renderer.domElement.style.display = 'block';
-    this.renderer.domElement.style.touchAction = 'none'; // el gesto es del 3D, no del scroll de la página
+    this.renderer.domElement.style.touchAction = 'none';
     el.appendChild(this.renderer.domElement);
 
-    // Órbita: se habilita en la vista final (en el wizard el panel ocupa la pantalla)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.minZoom = 0.3;
     this.controls.maxZoom = 4;
     this.controls.minPolarAngle = 0.25;
-    this.controls.maxPolarAngle = Math.PI / 2.15; // no deja ver por debajo del piso
+    this.controls.maxPolarAngle = Math.PI / 2.15;
     this.controls.enabled = false;
     this.controls.target.set(0, 0, 0);
     this.controls.addEventListener('start', () => {
-      // el usuario toma el control: dejamos de pelear con su zoom y su ángulo
       this.autoFit = false;
       this.autoAngle = false;
     });
     this.camera.lookAt(this.controls.target);
     this.controls.update();
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-    const key = new THREE.DirectionalLight(0xe6fff5, 1.3);
+    // ── NUEVO: Iluminación optimizada para cristal ──
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    
+    const key = new THREE.DirectionalLight(0xe6fff5, 2.0);
     key.position.set(15, 25, 15);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0005;
     Object.assign(key.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x22d3ee, 0.7);
+
+    const rim = new THREE.DirectionalLight(0x22d3ee, 1.2);
     rim.position.set(-15, 15, -15);
     this.scene.add(rim);
 
@@ -381,12 +372,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.scene.add(this.particles);
   }
 
-  /* ───────────── Zonas ocupadas por paneles ───────────── */
-
-  /**
-   * Lee del DOM los paneles marcados con `data-avoid` y calcula cuánto espacio ocupa cada borde.
-   * Devuelve true si algo cambió (un panel se abrió, cerró o cambió de tamaño).
-   */
   private measureInsets(): boolean {
     const canvas = this.host().nativeElement.getBoundingClientRect();
     const next: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -396,7 +381,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       if (r.width < 2 || r.height < 2) return;
 
       if (r.width > canvas.width * 0.7) {
-        // franja de lado a lado: header arriba o barra / hoja inferior abajo
         if (r.top - canvas.top < canvas.height / 2) next.top = Math.max(next.top, r.bottom - canvas.top);
         else next.bottom = Math.max(next.bottom, canvas.bottom - r.top);
       } else if (r.left - canvas.left + r.width / 2 < canvas.width / 2) {
@@ -416,24 +400,19 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     return changed;
   }
 
-  /** Expone los márgenes al CSS para que la leyenda no quede detrás de un panel. */
   private applyInsetVars(): void {
     const style = this.labelsHost().nativeElement.style;
     style.setProperty('--ins-right', `${this.measuredInsets.right}px`);
     style.setProperty('--ins-bottom', `${this.measuredInsets.bottom}px`);
   }
 
-  /** Zona libre = pantalla menos paneles, con un respiro para que nada quede pegado al borde. */
   private insets(): Insets {
     const m = this.measuredInsets;
     return { left: m.left + 20, top: m.top + 44, right: m.right + 20, bottom: m.bottom + 20 };
   }
 
-  /* ───────────── Layout lineal por capas ───────────── */
-
-  /** Posiciones de cada slot según los pasos de la ruta: columnas por capa, infra al frente, estructura atrás. */
   private computeSlotDefs(steps: WizardStep[]): SlotDef[] {
-    const body = steps.slice(1); // sin el paso "Proyecto"
+    const body = steps.slice(1);
     const columns = COLUMN_ORDER.filter(l => l === 'client' || body.some(s => s.layer === l));
     const colX = (layer: LayerId): number => (columns.indexOf(layer) - (columns.length - 1) / 2) * SPACING_X;
 
@@ -482,7 +461,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       box.expandByPoint(position);
     }
 
-    // Caja de encuadre: todos los slots + margen de plataforma + altura de piezas y etiquetas
     box.min.set(box.min.x - PLATFORM_MARGIN, 0, box.min.z - PLATFORM_MARGIN);
     box.max.set(box.max.x + PLATFORM_MARGIN, NODE_BASE_Y + 3.4, box.max.z + PLATFORM_MARGIN);
     this.fitBox.copy(box);
@@ -491,7 +469,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.layoutRoute = routeId;
   }
 
-  /** La infraestructura es la plataforma base que envuelve toda la cadena. */
   private buildPlatform(): void {
     this.platformGroup.children.slice().forEach(child => {
       this.platformGroup.remove(child);
@@ -520,12 +497,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.platformSpawn = 0;
   }
 
-  /* ───────────── Estado → escena ───────────── */
-
   private applyState(s: ViewState): void {
     this.built = s.built;
     this.controls.enabled = s.built;
-    this.autoFit = true; // cada cambio de paso reencuadra toda la cadena
+    this.autoFit = true;
     this.autoAngle = true;
 
     if (s.routeId !== this.layoutRoute) this.rebuildLayout(s.routeId, s.steps);
@@ -550,7 +525,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     this.activeKey = s.built ? null : (s.steps[s.step]?.category ?? null);
 
-    // Conectores entre las piezas de la cadena: solo se reconstruyen si cambió la estructura
     this.connectors.set(this.planLinks(this.chainSlots()));
   }
 
@@ -576,7 +550,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  /** Un enlace por cada par de piezas consecutivas; el sentido es el del request (izquierda → derecha). */
   private planLinks(chain: Slot[]): LinkPlan[] {
     const end = (slot: Slot): LinkPlan['from'] => {
       const id = slot.node!.optionId;
@@ -593,8 +566,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  /* ───────────── Mouse: conectores y piezas ───────────── */
-
   private updateRay(e: PointerEvent): { x: number; y: number } {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -605,7 +576,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     return { x, y };
   }
 
-  /** Pieza bajo el puntero (el cliente no abre detalle). */
   private pickSlot(): Slot | null {
     const bySlot = new Map<THREE.Object3D, Slot>();
     for (const slot of this.slots) {
@@ -622,7 +592,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const { x, y } = this.updateRay(e);
     const overLink = this.connectors.hover(this.raycaster, x, y);
 
-    // El detalle de piezas solo existe en la vista final
     this.hoverSlot = !overLink && this.built ? this.pickSlot() : null;
     this.renderer.domElement.style.cursor = overLink ? 'help' : this.hoverSlot ? 'pointer' : '';
   };
@@ -637,7 +606,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.downPos.set(e.clientX, e.clientY);
   };
 
-  /** Un clic (sin arrastre, que es órbita) abre el detalle de la pieza; clic en el vacío lo cierra. */
   private onPointerUp = (e: PointerEvent): void => {
     if (!this.built || Math.hypot(e.clientX - this.downPos.x, e.clientY - this.downPos.y) > 5) return;
 
@@ -646,17 +614,38 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.ngZone.run(() => (slot ? this.detail.toggle(slot.key) : this.detail.close()));
   };
 
-  /* ───────────── Piezas (modelos low-poly en piece-models.ts) ───────────── */
-
   private createNode(slot: Slot, optionId: string): NodeEntry {
     const option = OPTION_CATALOG[optionId];
-    const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399; // color por capa
+    const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399;
     const piece: PieceModel = buildPiece(modelKindFor(slot.key, optionId), color, option?.iconUrl);
 
-    piece.group.rotation.y = Math.PI / 4; // de frente a la cámara isométrica
+    // ── NUEVO: Convertir materiales a Cristal Físico ──
+    piece.group.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+        const oldMat = child.material;
+        child.material = new THREE.MeshPhysicalMaterial({
+          color: oldMat.color,
+          emissive: oldMat.emissive,
+          emissiveIntensity: oldMat.emissiveIntensity,
+          metalness: 0.1,
+          roughness: 0.1,         // Muy liso
+          transmission: 0.9,       // Efecto vidrio
+          thickness: 1.5,          // Grosor del vidrio
+          ior: 1.5,                // Índice de refracción
+          clearcoat: 1.0,          // Capa de brillo exterior
+          clearcoatRoughness: 0.1,
+          transparent: true,
+          opacity: 0.9,
+          envMapIntensity: 1.5
+        });
+        oldMat.dispose();
+      }
+    });
+
+    piece.group.rotation.y = Math.PI / 4;
     const group = new THREE.Group();
     group.add(piece.group);
-    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z); // cae desde arriba hasta su slot
+    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z);
     group.scale.setScalar(0.0001);
     this.nodesGroup.add(group);
 
@@ -664,7 +653,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       optionId,
       group,
       body: piece.group,
-      materials: piece.materials,
+      materials: piece.materials, // Ojo: si reemplazaste los materiales, esto podría no reflejar el nuevo material de cristal. 
       spawn: 0,
       phase: Math.random() * Math.PI * 2,
       opacity: 0,
@@ -687,8 +676,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.disposeObject(slot.pad);
     slot.pill.el.remove();
   }
-
-  /* ───────────── Etiquetas (DOM sobre el canvas) ───────────── */
 
   private createPill(layer: LayerId): PillRefs {
     const el = document.createElement('div');
@@ -726,7 +713,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     pill.layer.hidden = ghost;
 
     if (ghost) {
-      pill.name.textContent = layerName; // slot vacío: solo el nombre de la capa
+      pill.name.textContent = layerName;
       pill.icon.style.display = 'none';
     } else if (slot.key === 'client') {
       pill.name.textContent = 'Usuario';
@@ -765,7 +752,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       }
     }
 
-    // Colisión: de arriba hacia abajo, cada etiqueta baja si choca con una ya colocada
     items.sort((a, b) => a.y - b.y);
     const placed: typeof items = [];
     for (const item of items) {
@@ -787,8 +773,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  /* ───────────── Loop de animación ───────────── */
-
   private onResize(): void {
     const el = this.host().nativeElement;
     const w = el.clientWidth;
@@ -808,7 +792,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.measureInsets();
     this.applyInsetVars();
     this.autoFit = true;
-    this.autoAngle = true; // p. ej. al girar el teléfono cambia la proporción
+    this.autoAngle = true;
   }
 
   private animate = (): void => {
@@ -825,9 +809,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.updatePills();
   };
 
-  /** Encuadra toda la caja de la cadena dentro de la zona libre (pantalla menos paneles), sin recortar. */
   private updateCamera(): void {
-    // Los paneles se abren, cierran y cambian de alto: re-medimos cada tanto
     if (++this.insetTick % INSET_CHECK_EVERY === 0 && this.measureInsets()) {
       this.applyInsetVars();
       this.autoFit = true;
@@ -839,16 +821,14 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const freeW = Math.max(this.width - ins.left - ins.right, 120);
       const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
-      // Ángulo: zona ancha → casi de frente (cadena horizontal); estrecha → isométrica
       if (this.autoAngle) {
         const wide = freeW / freeH > 1.25;
         this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(wide ? OFFSET_WIDE : OFFSET_ISO, k);
         this.camera.position.copy(this.controls.target).add(this.tmpOffset);
       }
-      this.controls.update(); // reorienta la cámara hacia el foco
+      this.controls.update();
       this.camera.updateMatrixWorld();
 
-      // Extensión de la caja en el espacio de la cámara (derecha / arriba)
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
@@ -870,7 +850,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const zoomH = (2 * FRUSTUM * (freeH / this.height)) / (maxY - minY);
       const zoom = clamp(Math.min(zoomW, zoomH), 0.3, 3);
 
-      // El foco se mueve al centro de la caja; la cámara se traslada igual para no cambiar el ángulo
       this.fitBox.getCenter(this.tmpCenter);
       this.tmp.copy(this.tmpCenter).sub(this.controls.target).multiplyScalar(k);
       this.controls.target.add(this.tmp);
@@ -898,18 +877,33 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       node.spawn = Math.min(1, node.spawn + 0.035);
       node.group.scale.setScalar(Math.max(easeOutBack(node.spawn), 0.0001));
       node.group.position.y = PIECE_Y + (1 - node.spawn) ** 2 * 4.5 + Math.sin(t * 0.002 + node.phase) * 0.06 * node.spawn;
-      node.body.rotation.y = Math.PI / 4 + Math.sin(t * 0.0008 + node.phase) * 0.2; // vaivén suave, sin dar la espalda
+      node.body.rotation.y = Math.PI / 4 + Math.sin(t * 0.0008 + node.phase) * 0.2;
 
-      // Brillo: reposo × (selección o hover)
       const boost = this.built && slot.key === selected ? 2.2 : slot.node && this.hoverSlot === slot ? 1.7 : 1;
       node.opacity += (node.targetOpacity - node.opacity) * 0.12;
       node.glow += (node.baseGlow * boost - node.glow) * 0.12;
-      for (const mat of node.materials) {
-        mat.opacity = node.opacity;
-        if (mat instanceof THREE.MeshStandardMaterial) {
-          mat.emissiveIntensity = ((mat.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+      
+      // NOTA: Si al cambiar a MeshPhysicalMaterial los objetos no reaccionan al brillo, 
+      // puede ser porque el array node.materials guarda los materiales viejos. 
+      // Para evitar problemas, iteramos directamente sobre el grupo:
+      node.group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+           const mat = child.material;
+           if (Array.isArray(mat)) {
+             mat.forEach(m => {
+                m.opacity = node.opacity;
+                if (m instanceof THREE.MeshPhysicalMaterial || m instanceof THREE.MeshStandardMaterial) {
+                  m.emissiveIntensity = ((m.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+                }
+             });
+           } else if (mat) {
+             mat.opacity = node.opacity;
+             if (mat instanceof THREE.MeshPhysicalMaterial || mat instanceof THREE.MeshStandardMaterial) {
+               mat.emissiveIntensity = ((mat.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+             }
+           }
         }
-      }
+      });
     }
   }
 
@@ -927,8 +921,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     }
     attr.needsUpdate = true;
   }
-
-  /* ───────────── Limpieza ───────────── */
 
   private disposeObject(object: THREE.Object3D): void {
     object.traverse(child => {
