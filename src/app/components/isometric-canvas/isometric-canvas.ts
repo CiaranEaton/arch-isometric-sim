@@ -22,18 +22,24 @@ import {
   layerColor
 } from '../../models/architecture.models';
 import { ArchitectureStateService } from '../../services/architecture-state.service';
+import { PieceDetailService } from '../../services/piece-detail.service';
+import { ConnectorLayer, LinkPlan, Protocol } from './connectors';
 import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 
 /* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
-const BASE_OFFSET = new THREE.Vector3(18, 18, 18);
+/** Isométrica clásica: mejor para zonas libres estrechas (móvil). */
+const OFFSET_ISO = new THREE.Vector3(18, 18, 18);
+/** Más de frente: la cadena queda casi horizontal, mejor para zonas libres anchas (escritorio). */
+const OFFSET_WIDE = new THREE.Vector3(9, 17, 21);
 const NODE_BASE_Y = 0.95;
 const SPACING_X = 5.4;
 const SPACING_Z = 4.4;
 const PLATFORM_MARGIN = 3.4;
 const PILL_H = 34;
 const PARTICLE_COUNT = 140;
+const INSET_CHECK_EVERY = 15; // frames entre mediciones de los paneles
 
 /** Columnas de la línea de ensamble, de izquierda a derecha. Infra y workspace no son columnas. */
 const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
@@ -82,7 +88,8 @@ interface NodeEntry {
   opacity: number;
   targetOpacity: number;
   glow: number;
-  targetGlow: number;
+  /** Brillo de reposo (preview > confirmada); hover y selección lo multiplican. */
+  baseGlow: number;
 }
 
 interface Slot {
@@ -93,6 +100,13 @@ interface Slot {
   padMat: THREE.MeshBasicMaterial;
   pill: PillRefs;
   node: NodeEntry | null;
+}
+
+interface Insets {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 const easeOutBack = (x: number): number => {
@@ -130,6 +144,20 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
       .sb3d-pill-text small { font-size: 10px; line-height: 1.1; color: var(--layer); }
       .sb3d-pill.is-ghost { background: rgba(3, 9, 14, 0.55); border-style: dashed; box-shadow: none; color: #94a3b8; }
       .sb3d-pill.is-preview { box-shadow: 0 0 0 1px var(--layer), 0 0 20px color-mix(in srgb, var(--layer) 40%, transparent); }
+
+      /* Conectores: tooltip al pasar el mouse y leyenda de protocolos (se aparta de los paneles) */
+      .sb3d-tip {
+        position: absolute; left: 0; top: 0; opacity: 0; padding: 4px 10px; white-space: nowrap;
+        font-size: 12px; color: #e2e8f0; background: rgba(3, 9, 14, 0.92);
+        border: 1px solid; border-radius: 8px; transition: opacity 0.12s;
+      }
+      .sb3d-legend {
+        position: absolute; right: calc(var(--ins-right, 0px) + 16px); bottom: calc(var(--ins-bottom, 0px) + 10px);
+        display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; max-width: 60%;
+        font-size: 11px; color: #cbd5e1;
+      }
+      .sb3d-legend span { display: flex; align-items: center; gap: 6px; }
+      .sb3d-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; }
     `
   ],
   template: `
@@ -139,6 +167,7 @@ const clamp = (v: number, min: number, max: number): number => Math.min(max, Mat
 })
 export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly state = inject(ArchitectureStateService);
+  private readonly detail = inject(PieceDetailService);
   private readonly ngZone = inject(NgZone);
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
   private readonly labelsHost = viewChild.required<ElementRef<HTMLElement>>('labelsHost');
@@ -167,26 +196,37 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly platformGroup = new THREE.Group();
   private readonly padsGroup = new THREE.Group();
   private readonly nodesGroup = new THREE.Group();
-  private readonly linksGroup = new THREE.Group();
   private particles!: THREE.Points;
   private readonly particleSpeeds = new Float32Array(PARTICLE_COUNT);
+
+  // conectores (tubos, flechas, partículas, tooltip y leyenda)
+  private connectors!: ConnectorLayer;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly ndc = new THREE.Vector2();
 
   // layout
   private slots: Slot[] = [];
   private layoutRoute = '';
   private readonly fitBox = new THREE.Box3();
   private platformSpawn = 1;
-  private linksKey = '';
 
   // estado de vista
   private built = false;
   private activeKey: string | null = null;
+  private hoverSlot: Slot | null = null;
+  private readonly downPos = new THREE.Vector2();
 
   // cámara
-  private autoFit = true;
+  private autoFit = true; // reencuadra zoom, foco y desplazamiento
+  private autoAngle = true; // elige el ángulo según la proporción de la zona libre
   private readonly shift = new THREE.Vector2(0, 0);
   private readonly tmp = new THREE.Vector3();
   private readonly tmpCenter = new THREE.Vector3();
+  private readonly tmpOffset = new THREE.Vector3();
+
+  // zonas ocupadas por paneles (header, wizard, barra inferior, detalle), medidas del DOM
+  private measuredInsets: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
+  private insetTick = 0;
 
   constructor() {
     effect(() => {
@@ -201,8 +241,20 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.ngZone.runOutsideAngular(() => {
       this.initThree();
+
+      this.connectors = new ConnectorLayer(this.labelsHost().nativeElement);
+      this.scene.add(this.connectors.group);
+      const dom = this.renderer.domElement;
+      dom.addEventListener('pointermove', this.onPointerMove);
+      dom.addEventListener('pointerleave', this.onPointerLeave);
+      dom.addEventListener('pointerdown', this.onPointerDown);
+      dom.addEventListener('pointerup', this.onPointerUp);
+
       this.createGrid();
       this.createParticles();
+
+      this.measureInsets(); // primera medición antes de encuadrar
+      this.applyInsetVars();
 
       this.ready = true;
       this.applyState(this.viewState());
@@ -219,9 +271,18 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.resizeObserver?.disconnect();
     this.controls?.dispose();
 
+    if (this.renderer) {
+      const dom = this.renderer.domElement;
+      dom.removeEventListener('pointermove', this.onPointerMove);
+      dom.removeEventListener('pointerleave', this.onPointerLeave);
+      dom.removeEventListener('pointerdown', this.onPointerDown);
+      dom.removeEventListener('pointerup', this.onPointerUp);
+    }
+
     this.slots.forEach(slot => this.destroySlot(slot));
     this.slots = [];
-    [this.platformGroup, this.linksGroup].forEach(group => this.disposeObject(group));
+    this.disposeObject(this.platformGroup);
+    this.connectors?.dispose();
     if (this.particles) this.disposeObject(this.particles);
 
     if (this.renderer) {
@@ -242,7 +303,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
     this.camera.zoom = 0.7; // intro: arranca lejos y se encuadra solo
-    this.camera.position.copy(BASE_OFFSET);
+    this.camera.position.copy(OFFSET_ISO);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x000000, 0);
@@ -251,9 +312,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.domElement.style.display = 'block';
+    this.renderer.domElement.style.touchAction = 'none'; // el gesto es del 3D, no del scroll de la página
     el.appendChild(this.renderer.domElement);
 
-    // Órbita: se habilita en la vista final (en el wizard el panel ocupa la izquierda)
+    // Órbita: se habilita en la vista final (en el wizard el panel ocupa la pantalla)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
@@ -263,7 +325,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.controls.maxPolarAngle = Math.PI / 2.15; // no deja ver por debajo del piso
     this.controls.enabled = false;
     this.controls.target.set(0, 0, 0);
-    this.controls.addEventListener('start', () => (this.autoFit = false)); // el usuario toma el control
+    this.controls.addEventListener('start', () => {
+      // el usuario toma el control: dejamos de pelear con su zoom y su ángulo
+      this.autoFit = false;
+      this.autoAngle = false;
+    });
     this.camera.lookAt(this.controls.target);
     this.controls.update();
 
@@ -279,7 +345,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     rim.position.set(-15, 15, -15);
     this.scene.add(rim);
 
-    this.scene.add(this.platformGroup, this.padsGroup, this.nodesGroup, this.linksGroup);
+    this.scene.add(this.platformGroup, this.padsGroup, this.nodesGroup);
   }
 
   private createGrid(): void {
@@ -315,6 +381,54 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.scene.add(this.particles);
   }
 
+  /* ───────────── Zonas ocupadas por paneles ───────────── */
+
+  /**
+   * Lee del DOM los paneles marcados con `data-avoid` y calcula cuánto espacio ocupa cada borde.
+   * Devuelve true si algo cambió (un panel se abrió, cerró o cambió de tamaño).
+   */
+  private measureInsets(): boolean {
+    const canvas = this.host().nativeElement.getBoundingClientRect();
+    const next: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
+
+    document.querySelectorAll<HTMLElement>('[data-avoid]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return;
+
+      if (r.width > canvas.width * 0.7) {
+        // franja de lado a lado: header arriba o barra / hoja inferior abajo
+        if (r.top - canvas.top < canvas.height / 2) next.top = Math.max(next.top, r.bottom - canvas.top);
+        else next.bottom = Math.max(next.bottom, canvas.bottom - r.top);
+      } else if (r.left - canvas.left + r.width / 2 < canvas.width / 2) {
+        next.left = Math.max(next.left, r.right - canvas.left);
+      } else {
+        next.right = Math.max(next.right, canvas.right - r.left);
+      }
+    });
+
+    const m = this.measuredInsets;
+    const changed =
+      Math.abs(next.left - m.left) > 2 ||
+      Math.abs(next.top - m.top) > 2 ||
+      Math.abs(next.right - m.right) > 2 ||
+      Math.abs(next.bottom - m.bottom) > 2;
+    if (changed) this.measuredInsets = next;
+    return changed;
+  }
+
+  /** Expone los márgenes al CSS para que la leyenda no quede detrás de un panel. */
+  private applyInsetVars(): void {
+    const style = this.labelsHost().nativeElement.style;
+    style.setProperty('--ins-right', `${this.measuredInsets.right}px`);
+    style.setProperty('--ins-bottom', `${this.measuredInsets.bottom}px`);
+  }
+
+  /** Zona libre = pantalla menos paneles, con un respiro para que nada quede pegado al borde. */
+  private insets(): Insets {
+    const m = this.measuredInsets;
+    return { left: m.left + 20, top: m.top + 44, right: m.right + 20, bottom: m.bottom + 20 };
+  }
+
   /* ───────────── Layout lineal por capas ───────────── */
 
   /** Posiciones de cada slot según los pasos de la ruta: columnas por capa, infra al frente, estructura atrás. */
@@ -348,6 +462,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private rebuildLayout(routeId: string, steps: WizardStep[]): void {
     this.slots.forEach(slot => this.destroySlot(slot));
     this.slots = [];
+    this.hoverSlot = null;
 
     const defs = this.computeSlotDefs(steps);
     const box = new THREE.Box3();
@@ -374,7 +489,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     this.buildPlatform();
     this.layoutRoute = routeId;
-    this.linksKey = '';
   }
 
   /** La infraestructura es la plataforma base que envuelve toda la cadena. */
@@ -412,6 +526,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.built = s.built;
     this.controls.enabled = s.built;
     this.autoFit = true; // cada cambio de paso reencuadra toda la cadena
+    this.autoAngle = true;
 
     if (s.routeId !== this.layoutRoute) this.rebuildLayout(s.routeId, s.steps);
 
@@ -435,13 +550,8 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
     this.activeKey = s.built ? null : (s.steps[s.step]?.category ?? null);
 
-    // Enlaces provisionales entre piezas de la cadena (el paso de conectores los reemplaza)
-    const chain = this.chainSlots();
-    const key = chain.map(slot => slot.key).join('>');
-    if (key !== this.linksKey) {
-      this.linksKey = key;
-      this.rebuildLinks(chain);
-    }
+    // Conectores entre las piezas de la cadena: solo se reconstruyen si cambió la estructura
+    this.connectors.set(this.planLinks(this.chainSlots()));
   }
 
   private setSlotPiece(slot: Slot, optionId: string | null, mode: 'preview' | 'confirmed'): void {
@@ -456,7 +566,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       slot.node = this.createNode(slot, optionId);
     }
     slot.node.targetOpacity = mode === 'preview' ? 0.8 : 1;
-    slot.node.targetGlow = mode === 'preview' ? 2.6 : 1;
+    slot.node.baseGlow = mode === 'preview' ? 2.6 : 1;
     this.refreshPill(slot, optionId, mode);
   }
 
@@ -466,19 +576,75 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  private rebuildLinks(chain: Slot[]): void {
-    this.linksGroup.children.slice().forEach(child => {
-      this.linksGroup.remove(child);
-      this.disposeObject(child);
-    });
+  /** Un enlace por cada par de piezas consecutivas; el sentido es el del request (izquierda → derecha). */
+  private planLinks(chain: Slot[]): LinkPlan[] {
+    const end = (slot: Slot): LinkPlan['from'] => {
+      const id = slot.node!.optionId;
+      return {
+        position: slot.position,
+        name: slot.layer === 'client' ? 'Usuario' : (OPTION_CATALOG[id]?.name ?? id),
+        optionId: id
+      };
+    };
 
-    for (let i = 0; i < chain.length - 1; i++) {
-      const a = chain[i].position.clone().setY(NODE_BASE_Y);
-      const b = chain[i + 1].position.clone().setY(NODE_BASE_Y);
-      const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
-      this.linksGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.7 })));
-    }
+    return chain.slice(1).map((to, i) => {
+      const protocol: Protocol = to.layer === 'data' ? 'sql' : to.layer === 'auth' ? 'token' : 'http';
+      return { from: end(chain[i]), to: end(to), protocol };
+    });
   }
+
+  /* ───────────── Mouse: conectores y piezas ───────────── */
+
+  private updateRay(e: PointerEvent): { x: number; y: number } {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    this.ndc.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    return { x, y };
+  }
+
+  /** Pieza bajo el puntero (el cliente no abre detalle). */
+  private pickSlot(): Slot | null {
+    const bySlot = new Map<THREE.Object3D, Slot>();
+    for (const slot of this.slots) {
+      if (slot.node && slot.key !== 'client') bySlot.set(slot.node.group, slot);
+    }
+
+    const hit = this.raycaster.intersectObjects([...bySlot.keys()], true)[0];
+    let object: THREE.Object3D | null = hit?.object ?? null;
+    while (object && !bySlot.has(object)) object = object.parent;
+    return object ? (bySlot.get(object) ?? null) : null;
+  }
+
+  private onPointerMove = (e: PointerEvent): void => {
+    const { x, y } = this.updateRay(e);
+    const overLink = this.connectors.hover(this.raycaster, x, y);
+
+    // El detalle de piezas solo existe en la vista final
+    this.hoverSlot = !overLink && this.built ? this.pickSlot() : null;
+    this.renderer.domElement.style.cursor = overLink ? 'help' : this.hoverSlot ? 'pointer' : '';
+  };
+
+  private onPointerLeave = (): void => {
+    this.connectors.leave();
+    this.hoverSlot = null;
+    this.renderer.domElement.style.cursor = '';
+  };
+
+  private onPointerDown = (e: PointerEvent): void => {
+    this.downPos.set(e.clientX, e.clientY);
+  };
+
+  /** Un clic (sin arrastre, que es órbita) abre el detalle de la pieza; clic en el vacío lo cierra. */
+  private onPointerUp = (e: PointerEvent): void => {
+    if (!this.built || Math.hypot(e.clientX - this.downPos.x, e.clientY - this.downPos.y) > 5) return;
+
+    this.updateRay(e);
+    const slot = this.pickSlot();
+    this.ngZone.run(() => (slot ? this.detail.toggle(slot.key) : this.detail.close()));
+  };
 
   /* ───────────── Piezas (modelos low-poly en piece-models.ts) ───────────── */
 
@@ -504,7 +670,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       opacity: 0,
       targetOpacity: 1,
       glow: 1,
-      targetGlow: 1
+      baseGlow: 1
     };
   }
 
@@ -581,12 +747,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     pill.width = Math.ceil(pill.el.getBoundingClientRect().width);
   }
 
-  /** Zona libre para etiquetas y encuadre: deja fuera el header y el panel del wizard. */
-  private insets(): { left: number; top: number; right: number; bottom: number } {
-    const wizardOnLeft = !this.built && this.width >= 900;
-    return { left: wizardOnLeft ? 568 : 24, top: 96, right: 24, bottom: 24 };
-  }
-
   private updatePills(): void {
     const ins = this.insets();
     const items: { slot: Slot; x: number; y: number; w: number }[] = [];
@@ -644,7 +804,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.camera.bottom = -FRUSTUM;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+
+    this.measureInsets();
+    this.applyInsetVars();
     this.autoFit = true;
+    this.autoAngle = true; // p. ej. al girar el teléfono cambia la proporción
   }
 
   private animate = (): void => {
@@ -655,21 +819,36 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.updateSlots(t);
     this.updatePlatform();
     this.updateParticles();
+    this.connectors.update();
 
     this.renderer.render(this.scene, this.camera);
     this.updatePills();
   };
 
-  /** Encuadra toda la caja de la cadena dentro de la zona libre, sin recortar. */
+  /** Encuadra toda la caja de la cadena dentro de la zona libre (pantalla menos paneles), sin recortar. */
   private updateCamera(): void {
+    // Los paneles se abren, cierran y cambian de alto: re-medimos cada tanto
+    if (++this.insetTick % INSET_CHECK_EVERY === 0 && this.measureInsets()) {
+      this.applyInsetVars();
+      this.autoFit = true;
+    }
+
     if (this.autoFit && this.slots.length) {
       const k = 0.08;
       const ins = this.insets();
       const freeW = Math.max(this.width - ins.left - ins.right, 120);
       const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
-      // Extensión de la caja en el espacio de la cámara (derecha / arriba)
+      // Ángulo: zona ancha → casi de frente (cadena horizontal); estrecha → isométrica
+      if (this.autoAngle) {
+        const wide = freeW / freeH > 1.25;
+        this.tmpOffset.copy(this.camera.position).sub(this.controls.target).lerp(wide ? OFFSET_WIDE : OFFSET_ISO, k);
+        this.camera.position.copy(this.controls.target).add(this.tmpOffset);
+      }
+      this.controls.update(); // reorienta la cámara hacia el foco
       this.camera.updateMatrixWorld();
+
+      // Extensión de la caja en el espacio de la cámara (derecha / arriba)
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
@@ -689,7 +868,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       const aspect = this.width / this.height;
       const zoomW = (2 * FRUSTUM * aspect * (freeW / this.width)) / (maxX - minX);
       const zoomH = (2 * FRUSTUM * (freeH / this.height)) / (maxY - minY);
-      const zoom = clamp(Math.min(zoomW, zoomH) * 0.96, 0.3, 3);
+      const zoom = clamp(Math.min(zoomW, zoomH), 0.3, 3);
 
       // El foco se mueve al centro de la caja; la cámara se traslada igual para no cambiar el ángulo
       this.fitBox.getCenter(this.tmpCenter);
@@ -707,8 +886,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   }
 
   private updateSlots(t: number): void {
+    const selected = this.detail.selected();
+
     for (const slot of this.slots) {
-      const padTarget = slot.key === this.activeKey ? 0.5 : 0.18;
+      const padTarget = slot.key === this.activeKey || slot.key === selected ? 0.5 : 0.18;
       slot.padMat.opacity += (padTarget - slot.padMat.opacity) * 0.12;
 
       const node = slot.node;
@@ -719,8 +900,10 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       node.group.position.y = PIECE_Y + (1 - node.spawn) ** 2 * 4.5 + Math.sin(t * 0.002 + node.phase) * 0.06 * node.spawn;
       node.body.rotation.y = Math.PI / 4 + Math.sin(t * 0.0008 + node.phase) * 0.2; // vaivén suave, sin dar la espalda
 
+      // Brillo: reposo × (selección o hover)
+      const boost = this.built && slot.key === selected ? 2.2 : slot.node && this.hoverSlot === slot ? 1.7 : 1;
       node.opacity += (node.targetOpacity - node.opacity) * 0.12;
-      node.glow += (node.targetGlow - node.glow) * 0.12;
+      node.glow += (node.baseGlow * boost - node.glow) * 0.12;
       for (const mat of node.materials) {
         mat.opacity = node.opacity;
         if (mat instanceof THREE.MeshStandardMaterial) {
