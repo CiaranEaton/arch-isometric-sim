@@ -5,92 +5,94 @@ import {
   ElementRef,
   NgZone,
   OnDestroy,
+  ViewEncapsulation,
   computed,
   effect,
   inject,
   viewChild
 } from '@angular/core';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   ArchitectureSelection,
-  NodeCategory,
-  OPTION_VISUALS,
-  OptionVisual,
-  ShapeKind
+  LAYERS,
+  LayerId,
+  OPTION_CATALOG,
+  WizardStep,
+  layerColor
 } from '../../models/architecture.models';
 import { ArchitectureStateService } from '../../services/architecture-state.service';
+import { PieceModel, buildPiece, modelKindFor } from './piece-models';
 
-/* ───────────────────────── Constantes de escena ───────────────────────── */
+/* ───────────────────────── Constantes ───────────────────────── */
 
 const FRUSTUM = 12;
 const BASE_OFFSET = new THREE.Vector3(18, 18, 18);
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const NODE_BASE_Y = 0.95;
-
-/** Orden = paso 1..5 del wizard (el paso 0 es el tipo de sistema). */
-const NODE_CATEGORIES: NodeCategory[] = ['frontend', 'backend', 'database', 'auth', 'devops'];
-
-const SLOTS: Record<NodeCategory, THREE.Vector3> = {
-  frontend: new THREE.Vector3(-6, 0, 0),
-  backend: new THREE.Vector3(1, 0, 0),
-  database: new THREE.Vector3(5, 0, 0),
-  auth: new THREE.Vector3(-2, 0, -3.5),
-  devops: new THREE.Vector3(1, 0, 4.5)
-};
-
-const ROLES: Record<NodeCategory, string> = {
-  frontend: 'CAPA CLIENTE',
-  backend: 'BACKEND CORE',
-  database: 'DATOS',
-  auth: 'SEGURIDAD',
-  devops: 'DEPLOY'
-};
-
-const CONNECTIONS: [NodeCategory, NodeCategory][] = [
-  ['frontend', 'auth'],
-  ['frontend', 'backend'],
-  ['auth', 'backend'],
-  ['backend', 'database'],
-  ['backend', 'devops']
-];
-
-const SCENE_CENTER = new THREE.Vector3(-0.5, 0, 0.5);
-const FALLBACK_VISUAL: OptionVisual = { color: 0x10b981, shape: 'box', short: 'NODE' };
+const SPACING_X = 5.4;
+const SPACING_Z = 4.4;
+const PLATFORM_MARGIN = 3.4;
+const PILL_H = 34;
 const PARTICLE_COUNT = 140;
+
+/** Columnas de la línea de ensamble, de izquierda a derecha. Infra y workspace no son columnas. */
+const COLUMN_ORDER: LayerId[] = ['client', 'frontend', 'auth', 'backend', 'data'];
+
+const LAYER_LABEL: Record<string, string> = {
+  ...Object.fromEntries(LAYERS.map(l => [l.id, l.label])),
+  workspace: 'Estructura'
+};
+
+const PIECE_Y = 0.1; // base de cada pieza sobre la plataforma
 
 /* ───────────────────────── Tipos internos ───────────────────────── */
 
 interface ViewState {
   step: number;
   built: boolean;
-  highlighted: string;
+  routeId: string;
+  steps: WizardStep[];
   selection: ArchitectureSelection;
+  selectedId: string;
+}
+
+interface SlotDef {
+  key: string;
+  layer: LayerId;
+  x: number;
+  z: number;
+}
+
+interface PillRefs {
+  el: HTMLDivElement;
+  icon: HTMLImageElement;
+  name: HTMLElement;
+  layer: HTMLElement;
+  width: number;
+  key: string;
 }
 
 interface NodeEntry {
-  category: NodeCategory;
   optionId: string;
   group: THREE.Group;
-  body: THREE.Mesh;
-  bodyMat: THREE.MeshStandardMaterial;
-  edgeMat: THREE.LineBasicMaterial | null;
-  labelMat: THREE.SpriteMaterial;
+  body: THREE.Group;
+  materials: THREE.Material[];
   spawn: number;
   phase: number;
+  opacity: number;
   targetOpacity: number;
-  targetEmissive: number;
+  glow: number;
+  targetGlow: number;
 }
 
-interface FadeMat {
-  mat: THREE.Material & { opacity: number };
-  max: number;
-}
-
-interface Pulse {
-  mesh: THREE.Mesh;
-  curve: THREE.CatmullRomCurve3;
-  progress: number;
-  speed: number;
+interface Slot {
+  key: string;
+  layer: LayerId;
+  position: THREE.Vector3;
+  pad: THREE.Mesh;
+  padMat: THREE.MeshBasicMaterial;
+  pill: PillRefs;
+  node: NodeEntry | null;
 }
 
 const easeOutBack = (x: number): number => {
@@ -99,7 +101,7 @@ const easeOutBack = (x: number): number => {
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 };
 
-const visualOf = (optionId: string): OptionVisual => OPTION_VISUALS[optionId] ?? FALLBACK_VISUAL;
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 
 /* ───────────────────────── Componente ───────────────────────── */
 
@@ -107,26 +109,54 @@ const visualOf = (optionId: string): OptionVisual => OPTION_VISUALS[optionId] ??
   selector: 'app-isometric-canvas',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: [`:host { display: block; position: relative; width: 100%; height: 100%; }`],
-  template: `<div #host class="absolute inset-0"></div>`
+  encapsulation: ViewEncapsulation.None, // las etiquetas se crean por código: necesitan estilos globales al componente
+  styles: [
+    `
+      app-isometric-canvas { display: block; position: relative; width: 100%; height: 100%; }
+      .sb3d-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+      .sb3d-pill {
+        position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 0.45rem;
+        height: 34px; padding: 0 0.8rem 0 0.5rem; white-space: nowrap; opacity: 0;
+        color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
+        background: rgba(3, 9, 14, 0.88);
+        border: 1px solid color-mix(in srgb, var(--layer) 70%, transparent);
+        border-radius: 999px;
+        box-shadow: 0 0 16px color-mix(in srgb, var(--layer) 28%, transparent);
+        will-change: transform, opacity;
+      }
+      .sb3d-pill-icon { width: 18px; height: 18px; object-fit: contain; }
+      .sb3d-pill-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 170px; }
+      .sb3d-pill-text strong { overflow: hidden; font-size: 12px; font-weight: 650; line-height: 1.1; text-overflow: ellipsis; }
+      .sb3d-pill-text small { font-size: 10px; line-height: 1.1; color: var(--layer); }
+      .sb3d-pill.is-ghost { background: rgba(3, 9, 14, 0.55); border-style: dashed; box-shadow: none; color: #94a3b8; }
+      .sb3d-pill.is-preview { box-shadow: 0 0 0 1px var(--layer), 0 0 20px color-mix(in srgb, var(--layer) 40%, transparent); }
+    `
+  ],
+  template: `
+    <div #host class="absolute inset-0"></div>
+    <div #labelsHost class="sb3d-labels" aria-hidden="true"></div>
+  `
 })
 export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly state = inject(ArchitectureStateService);
   private readonly ngZone = inject(NgZone);
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
+  private readonly labelsHost = viewChild.required<ElementRef<HTMLElement>>('labelsHost');
 
-  /** Todo lo que el 3D necesita saber, derivado del estado compartido. */
   private readonly viewState = computed<ViewState>(() => ({
     step: this.state.step(),
     built: this.state.isBuilt(),
-    highlighted: this.state.highlightedId(),
-    selection: this.state.selection()
+    routeId: this.state.routeId(),
+    steps: this.state.steps(),
+    selection: this.state.selection(),
+    selectedId: this.state.selectedId()
   }));
 
   // three.js
   private scene!: THREE.Scene;
   private camera!: THREE.OrthographicCamera;
   private renderer!: THREE.WebGLRenderer;
+  private controls!: OrbitControls;
   private rafId: number | null = null;
   private resizeObserver?: ResizeObserver;
   private ready = false;
@@ -134,50 +164,33 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   private height = 1;
 
   // grupos
-  private readonly nodesGroup = new THREE.Group();
-  private readonly cablesGroup = new THREE.Group();
   private readonly platformGroup = new THREE.Group();
+  private readonly padsGroup = new THREE.Group();
+  private readonly nodesGroup = new THREE.Group();
+  private readonly linksGroup = new THREE.Group();
+  private particles!: THREE.Points;
+  private readonly particleSpeeds = new Float32Array(PARTICLE_COUNT);
 
-  // nodos / cables / plataforma
-  private readonly nodes = new Map<NodeCategory, NodeEntry>();
-  private pulses: Pulse[] = [];
-  private cablesKey = '';
-  private platformType: string | null = null;
-  private platformFades: FadeMat[] = [];
-  private platformMode: 'preview' | 'confirmed' = 'preview';
+  // layout
+  private slots: Slot[] = [];
+  private layoutRoute = '';
+  private readonly fitBox = new THREE.Box3();
   private platformSpawn = 1;
+  private linksKey = '';
 
-  // orbe
-  private readonly orb = new THREE.Group();
-  private orbSphere!: THREE.Mesh;
-  private orbRingA!: THREE.Mesh;
-  private orbRingB!: THREE.Mesh;
-  private orbMats: THREE.MeshBasicMaterial[] = [];
-  private readonly orbColor = new THREE.Color(FALLBACK_VISUAL.color);
-  private readonly orbTargetColor = new THREE.Color(FALLBACK_VISUAL.color);
-  private readonly orbTargetPos = new THREE.Vector3();
-  private orbTargetScale = 0;
-  private orbScale = 0.0001;
+  // estado de vista
+  private built = false;
+  private activeKey: string | null = null;
 
   // cámara
-  private readonly focus = SCENE_CENTER.clone();
-  private readonly targetFocus = SCENE_CENTER.clone();
-  private targetZoom = 1;
-  private readonly viewShift = new THREE.Vector2(0, 0);
-  private readonly targetShift = new THREE.Vector2(0, 0);
-  private readonly pointer = new THREE.Vector2(0, 0);
-  private readonly pointerSmooth = new THREE.Vector2(0, 0);
-  private readonly tmpOffset = new THREE.Vector3();
-  private readonly tmpPoint = new THREE.Vector3();
-
-  // partículas
-  private particles!: THREE.Points;
-  private particleSpeeds = new Float32Array(PARTICLE_COUNT);
+  private autoFit = true;
+  private readonly shift = new THREE.Vector2(0, 0);
+  private readonly tmp = new THREE.Vector3();
+  private readonly tmpCenter = new THREE.Vector3();
 
   constructor() {
-    // Reacciona a cada cambio de paso / opción resaltada / selección
     effect(() => {
-      const s = this.viewState(); // se lee SIEMPRE para que el effect quede suscrito
+      const s = this.viewState(); // se lee siempre para que el effect quede suscrito
       if (!this.ready) return;
       this.applyState(s);
     });
@@ -189,7 +202,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.ngZone.runOutsideAngular(() => {
       this.initThree();
       this.createGrid();
-      this.createOrb();
       this.createParticles();
 
       this.ready = true;
@@ -197,7 +209,6 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
 
       this.resizeObserver = new ResizeObserver(() => this.onResize());
       this.resizeObserver.observe(this.host().nativeElement);
-      window.addEventListener('pointermove', this.onPointerMove, { passive: true });
 
       this.animate();
     });
@@ -206,13 +217,11 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.resizeObserver?.disconnect();
-    window.removeEventListener('pointermove', this.onPointerMove);
+    this.controls?.dispose();
 
-    this.nodes.forEach(entry => this.disposeObject(entry.group));
-    this.nodes.clear();
-    this.disposeObject(this.cablesGroup);
-    this.disposeObject(this.platformGroup);
-    this.disposeObject(this.orb);
+    this.slots.forEach(slot => this.destroySlot(slot));
+    this.slots = [];
+    [this.platformGroup, this.linksGroup].forEach(group => this.disposeObject(group));
     if (this.particles) this.disposeObject(this.particles);
 
     if (this.renderer) {
@@ -230,371 +239,395 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const aspect = this.width / this.height;
 
     this.scene = new THREE.Scene();
-    this.scene.background = null; // transparente: se ve el fondo oscuro del body
 
     this.camera = new THREE.OrthographicCamera(-FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 1000);
-    this.camera.zoom = 0.7; // pequeño "intro": arranca lejos y se acerca
-    this.camera.position.copy(this.focus).add(BASE_OFFSET);
-    this.camera.lookAt(this.focus);
+    this.camera.zoom = 0.7; // intro: arranca lejos y se encuadra solo
+    this.camera.position.copy(BASE_OFFSET);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(this.width, this.height);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.domElement.style.display = 'block';
     el.appendChild(this.renderer.domElement);
 
-    // Luces suaves: el color lo aporta el emissive de cada figura
+    // Órbita: se habilita en la vista final (en el wizard el panel ocupa la izquierda)
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minZoom = 0.3;
+    this.controls.maxZoom = 4;
+    this.controls.minPolarAngle = 0.25;
+    this.controls.maxPolarAngle = Math.PI / 2.15; // no deja ver por debajo del piso
+    this.controls.enabled = false;
+    this.controls.target.set(0, 0, 0);
+    this.controls.addEventListener('start', () => (this.autoFit = false)); // el usuario toma el control
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-
-    const key = new THREE.DirectionalLight(0x10b981, 1.1);
+    const key = new THREE.DirectionalLight(0xe6fff5, 1.3);
     key.position.set(15, 25, 15);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0005;
+    Object.assign(key.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
     this.scene.add(key);
-
     const rim = new THREE.DirectionalLight(0x22d3ee, 0.7);
     rim.position.set(-15, 15, -15);
     this.scene.add(rim);
 
-    this.scene.add(this.platformGroup, this.nodesGroup, this.cablesGroup);
+    this.scene.add(this.platformGroup, this.padsGroup, this.nodesGroup, this.linksGroup);
   }
 
   private createGrid(): void {
-    const grid = new THREE.GridHelper(40, 40, 0x10b981, 0x064e3b);
+    const grid = new THREE.GridHelper(60, 60, 0x10b981, 0x064e3b);
     grid.position.y = -0.4;
     const mat = grid.material as THREE.LineBasicMaterial;
     mat.transparent = true;
-    mat.opacity = 0.45;
+    mat.opacity = 0.35;
     this.scene.add(grid);
-  }
-
-  private createOrb(): void {
-    const makeMat = (opacity: number, wireframe = false): THREE.MeshBasicMaterial => {
-      const m = new THREE.MeshBasicMaterial({
-        color: this.orbColor,
-        transparent: true,
-        opacity,
-        wireframe,
-        depthWrite: false
-      });
-      this.orbMats.push(m);
-      return m;
-    };
-
-    this.orbSphere = new THREE.Mesh(new THREE.SphereGeometry(2.1, 28, 18), makeMat(0.16, true));
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(1.95, 24, 16), makeMat(0.05));
-    (glow.material as THREE.MeshBasicMaterial).side = THREE.BackSide;
-
-    this.orbRingA = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.03, 8, 96), makeMat(0.6));
-    this.orbRingA.rotation.x = Math.PI / 2.4;
-    this.orbRingB = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.025, 8, 96), makeMat(0.4));
-    this.orbRingB.rotation.y = Math.PI / 2.8;
-
-    this.orb.add(this.orbSphere, glow, this.orbRingA, this.orbRingB);
-    this.orb.scale.setScalar(0.0001);
-    this.orb.visible = false;
-    this.scene.add(this.orb);
   }
 
   private createParticles(): void {
     const positions = new Float32Array(PARTICLE_COUNT * 3);
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 36;
+      positions[i * 3] = (Math.random() - 0.5) * 50;
       positions[i * 3 + 1] = Math.random() * 14;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 36;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 50;
       this.particleSpeeds[i] = 0.004 + Math.random() * 0.008;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
     this.particles = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({
         color: 0x34d399,
-        size: 3, // px: en cámara ortográfica no hay atenuación por distancia
+        size: 3,
         sizeAttenuation: false,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.45,
         depthWrite: false
       })
     );
     this.scene.add(this.particles);
   }
 
-  /* ───────────── Estado → escena ───────────── */
+  /* ───────────── Layout lineal por capas ───────────── */
 
-  private applyState(s: ViewState): void {
-    const { step, built, highlighted, selection } = s;
+  /** Posiciones de cada slot según los pasos de la ruta: columnas por capa, infra al frente, estructura atrás. */
+  private computeSlotDefs(steps: WizardStep[]): SlotDef[] {
+    const body = steps.slice(1); // sin el paso "Proyecto"
+    const columns = COLUMN_ORDER.filter(l => l === 'client' || body.some(s => s.layer === l));
+    const colX = (layer: LayerId): number => (columns.indexOf(layer) - (columns.length - 1) / 2) * SPACING_X;
 
-    /* 1) Qué figuras deben existir y en qué modo */
-    const desired = new Map<NodeCategory, { optionId: string; mode: 'preview' | 'confirmed' }>();
-    NODE_CATEGORIES.forEach((category, i) => {
-      const stepIndex = i + 1;
-      if (built || stepIndex < step) {
-        desired.set(category, { optionId: selection[category], mode: 'confirmed' });
-      } else if (stepIndex === step) {
-        desired.set(category, { optionId: highlighted, mode: 'preview' });
-      }
+    const defs: SlotDef[] = [{ key: 'client', layer: 'client', x: colX('client'), z: 0 }];
+    const stacked = new Map<LayerId, number>();
+
+    body.forEach(step => {
+      if (step.layer === 'infra' || step.layer === 'workspace') return;
+      const n = stacked.get(step.layer) ?? 0;
+      stacked.set(step.layer, n + 1);
+      defs.push({ key: step.category, layer: step.layer, x: colX(step.layer), z: -n * SPACING_Z });
     });
 
-    // quitar las que sobran (por ejemplo al volver atrás)
-    for (const [category, entry] of this.nodes) {
-      if (!desired.has(category)) {
-        this.nodesGroup.remove(entry.group);
-        this.disposeObject(entry.group);
-        this.nodes.delete(category);
-      }
-    }
+    const infra = body.filter(s => s.layer === 'infra');
+    infra.forEach((step, i) =>
+      defs.push({ key: step.category, layer: 'infra', x: (i - (infra.length - 1) / 2) * SPACING_X, z: SPACING_Z * 1.3 })
+    );
 
-    // crear / reemplazar / actualizar modo
-    desired.forEach((want, category) => {
-      let entry = this.nodes.get(category);
-      if (!entry || entry.optionId !== want.optionId) {
-        if (entry) {
-          this.nodesGroup.remove(entry.group);
-          this.disposeObject(entry.group);
-        }
-        entry = this.createNode(category, want.optionId);
-        this.nodes.set(category, entry);
-      }
-      entry.targetOpacity = want.mode === 'preview' ? 0.8 : 1;
-      entry.targetEmissive = want.mode === 'preview' ? 0.55 : 0.2;
-    });
+    body
+      .filter(s => s.layer === 'workspace')
+      .forEach(step => defs.push({ key: step.category, layer: 'workspace', x: colX('client'), z: -SPACING_Z }));
 
-    /* 2) Plataforma (tipo de sistema) */
-    const platformType = step === 0 && !built ? highlighted : (selection['system'] ?? 'default');
-    if (platformType !== this.platformType) {
-      this.buildPlatform(platformType);
-    }
-    this.platformMode = built || step > 0 ? 'confirmed' : 'preview';
-
-    /* 3) Cables entre las figuras visibles */
-    const visible = NODE_CATEGORIES.filter(c => desired.has(c));
-    const key = visible.join('|');
-    if (key !== this.cablesKey) {
-      this.cablesKey = key;
-      this.rebuildCables(new Set(visible));
-    }
-
-    /* 4) Orbe y cámara */
-    this.orbTargetColor.setHex(visualOf(highlighted).color);
-
-    if (built) {
-      this.orbTargetScale = 0;
-      this.targetFocus.copy(SCENE_CENTER);
-      this.targetZoom = 0.85;
-    } else if (step === 0) {
-      this.orbTargetPos.set(SCENE_CENTER.x, 0.5, SCENE_CENTER.z);
-      this.orbTargetScale = 3.3;
-      this.targetFocus.copy(SCENE_CENTER);
-      this.targetZoom = 1;
-    } else {
-      const slot = SLOTS[NODE_CATEGORIES[step - 1]] ?? SLOTS['devops'];
-      this.orbTargetPos.set(slot.x, NODE_BASE_Y, slot.z);
-      this.orbTargetScale = 1.3;
-      this.targetFocus.set(slot.x, 0, slot.z);
-      this.targetZoom = 1.55;
-    }
-
-    // En el wizard el menú ocupa la izquierda: movemos la escena hacia la derecha (o hacia arriba en móvil)
-    if (built) {
-      this.targetShift.set(0, 0);
-    } else if (window.innerWidth >= 900) {
-      this.targetShift.set(0.19, 0);
-    } else {
-      this.targetShift.set(0, 0.2);
-    }
+    return defs;
   }
 
-  /* ───────────── Figuras ───────────── */
+  private rebuildLayout(routeId: string, steps: WizardStep[]): void {
+    this.slots.forEach(slot => this.destroySlot(slot));
+    this.slots = [];
 
-  private createNode(category: NodeCategory, optionId: string): NodeEntry {
-    const visual = visualOf(optionId);
-    const slot = SLOTS[category];
+    const defs = this.computeSlotDefs(steps);
+    const box = new THREE.Box3();
 
-    const geometry = this.makeGeometry(visual.shape);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: visual.color,
-      roughness: 0.45,
-      metalness: 0.3,
-      emissive: visual.color,
-      emissiveIntensity: 0.2,
-      transparent: true,
-      opacity: 0
-    });
-    const body = new THREE.Mesh(geometry, bodyMat);
+    for (const def of defs) {
+      const position = new THREE.Vector3(def.x, 0, def.z);
+      const color = LAYERS.find(l => l.id === def.layer)?.color ?? 0x34d399;
 
-    // Aristas para dar el look "wireframe tech" (en figuras curvas se omiten para no ensuciar)
-    let edgeMat: THREE.LineBasicMaterial | null = null;
-    if (visual.shape !== 'torus' && visual.shape !== 'cylinder' && visual.shape !== 'cone') {
-      edgeMat = new THREE.LineBasicMaterial({ color: 0x6ee7b7, transparent: true, opacity: 0 });
-      body.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 40), edgeMat));
+      const padGeometry = new THREE.BoxGeometry(3.6, 0.06, 3.6);
+      const padMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false });
+      const pad = new THREE.Mesh(padGeometry, padMat);
+      pad.position.set(def.x, 0.03, def.z);
+      pad.add(new THREE.LineSegments(new THREE.EdgesGeometry(padGeometry), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 })));
+      this.padsGroup.add(pad);
+
+      this.slots.push({ key: def.key, layer: def.layer, position, pad, padMat, pill: this.createPill(def.layer), node: null });
+      box.expandByPoint(position);
     }
 
-    const label = this.makeLabel(ROLES[category], visual.short, visual.color);
+    // Caja de encuadre: todos los slots + margen de plataforma + altura de piezas y etiquetas
+    box.min.set(box.min.x - PLATFORM_MARGIN, 0, box.min.z - PLATFORM_MARGIN);
+    box.max.set(box.max.x + PLATFORM_MARGIN, NODE_BASE_Y + 3.4, box.max.z + PLATFORM_MARGIN);
+    this.fitBox.copy(box);
 
-    const group = new THREE.Group();
-    group.add(body, label.sprite);
-    label.sprite.position.set(0, 2.6, 0);
-    group.position.set(slot.x, NODE_BASE_Y, slot.z);
-    group.scale.setScalar(0.0001);
-    this.nodesGroup.add(group);
-
-    return {
-      category,
-      optionId,
-      group,
-      body,
-      bodyMat,
-      edgeMat,
-      labelMat: label.material,
-      spawn: 0,
-      phase: Math.random() * Math.PI * 2,
-      targetOpacity: 1,
-      targetEmissive: 0.2
-    };
+    this.buildPlatform();
+    this.layoutRoute = routeId;
+    this.linksKey = '';
   }
 
-  private makeGeometry(shape: ShapeKind): THREE.BufferGeometry {
-    switch (shape) {
-      case 'octa':
-        return new THREE.OctahedronGeometry(1.5);
-      case 'tetra':
-        return new THREE.TetrahedronGeometry(1.7);
-      case 'icosa':
-        return new THREE.IcosahedronGeometry(1.4, 0);
-      case 'dodeca':
-        return new THREE.DodecahedronGeometry(1.4);
-      case 'cylinder':
-        return new THREE.CylinderGeometry(1.2, 1.2, 1.8, 32);
-      case 'cone':
-        return new THREE.ConeGeometry(1.3, 2.1, 32);
-      case 'torus':
-        return new THREE.TorusGeometry(1, 0.4, 16, 48);
-      case 'box':
-      default:
-        return new THREE.BoxGeometry(2.2, 1.6, 2.2);
-    }
-  }
-
-  private makeLabel(role: string, name: string, color: number): { sprite: THREE.Sprite; material: THREE.SpriteMaterial } {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 160;
-    const ctx = canvas.getContext('2d')!;
-    const hex = '#' + new THREE.Color(color).getHexString();
-
-    ctx.textAlign = 'center';
-    ctx.font = '600 26px ui-monospace, "Courier New", monospace';
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.95)';
-    ctx.fillText(role, 256, 50);
-
-    ctx.font = '800 52px ui-monospace, "Courier New", monospace';
-    ctx.shadowColor = hex;
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(name, 256, 114);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, opacity: 0 });
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.set(5.12, 1.6, 1);
-    sprite.renderOrder = 10;
-    return { sprite, material };
-  }
-
-  /* ───────────── Plataforma (tipo de sistema) ───────────── */
-
-  private buildPlatform(type: string): void {
-    this.platformType = type;
+  /** La infraestructura es la plataforma base que envuelve toda la cadena. */
+  private buildPlatform(): void {
     this.platformGroup.children.slice().forEach(child => {
       this.platformGroup.remove(child);
       this.disposeObject(child);
     });
-    this.platformFades = [];
+
+    const size = this.fitBox.getSize(new THREE.Vector3());
+    const center = this.fitBox.getCenter(new THREE.Vector3());
+    const geometry = new THREE.BoxGeometry(size.x, 0.35, size.z);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x03120d,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.18,
+      roughness: 0.6,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.9
+    });
+    const slab = new THREE.Mesh(geometry, mat);
+    slab.position.y = -0.2;
+    slab.receiveShadow = true;
+    slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.9 })));
+
+    this.platformGroup.add(slab);
+    this.platformGroup.position.set(center.x, 0, center.z);
     this.platformSpawn = 0;
+  }
 
-    const addSlab = (w: number, d: number, x: number, z: number, color: number, edgeColor: number): void => {
-      const geometry = new THREE.BoxGeometry(w, 0.35, d);
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0x03120d,
-        emissive: color,
-        emissiveIntensity: 0.18,
-        roughness: 0.6,
-        metalness: 0.2,
-        transparent: true,
-        opacity: 0
-      });
-      const mesh = new THREE.Mesh(geometry, mat);
-      mesh.position.set(x, -0.2, z);
+  /* ───────────── Estado → escena ───────────── */
 
-      const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0 });
-      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMat));
+  private applyState(s: ViewState): void {
+    this.built = s.built;
+    this.controls.enabled = s.built;
+    this.autoFit = true; // cada cambio de paso reencuadra toda la cadena
 
-      this.platformGroup.add(mesh);
-      this.platformFades.push({ mat, max: 0.85 }, { mat: edgeMat, max: 0.9 });
-    };
+    if (s.routeId !== this.layoutRoute) this.rebuildLayout(s.routeId, s.steps);
 
-    if (type === 'microservices') {
-      // Una base independiente por cada servicio
-      NODE_CATEGORIES.forEach(category => {
-        const slot = SLOTS[category];
-        addSlab(3.8, 3.8, slot.x, slot.z, 0xa78bfa, 0xc4b5fd);
-      });
-    } else {
-      // Una sola base compartida
-      addSlab(17, 13, SCENE_CENTER.x, SCENE_CENTER.z, 0x10b981, 0x34d399);
+    for (const slot of this.slots) {
+      let optionId: string | null = null;
+      let mode: 'preview' | 'confirmed' = 'confirmed';
+
+      if (slot.key === 'client') {
+        optionId = 'client';
+      } else {
+        const index = s.steps.findIndex(step => step.category === slot.key);
+        if (s.built || index < s.step) {
+          optionId = s.selection[slot.key] ?? null;
+        } else if (index === s.step) {
+          optionId = s.selectedId || null;
+          mode = 'preview';
+        }
+      }
+      this.setSlotPiece(slot, optionId, mode);
+    }
+
+    this.activeKey = s.built ? null : (s.steps[s.step]?.category ?? null);
+
+    // Enlaces provisionales entre piezas de la cadena (el paso de conectores los reemplaza)
+    const chain = this.chainSlots();
+    const key = chain.map(slot => slot.key).join('>');
+    if (key !== this.linksKey) {
+      this.linksKey = key;
+      this.rebuildLinks(chain);
     }
   }
 
-  /* ───────────── Cables ───────────── */
+  private setSlotPiece(slot: Slot, optionId: string | null, mode: 'preview' | 'confirmed'): void {
+    if (!optionId) {
+      this.removeNode(slot);
+      this.refreshPill(slot, null, mode);
+      return;
+    }
 
-  private rebuildCables(visible: Set<NodeCategory>): void {
-    this.cablesGroup.children.slice().forEach(child => {
-      this.cablesGroup.remove(child);
-      this.disposeObject(child);
-    });
-    this.pulses = [];
-
-    CONNECTIONS.forEach(([a, b]) => {
-      if (visible.has(a) && visible.has(b)) this.connect(a, b);
-    });
+    if (!slot.node || slot.node.optionId !== optionId) {
+      this.removeNode(slot);
+      slot.node = this.createNode(slot, optionId);
+    }
+    slot.node.targetOpacity = mode === 'preview' ? 0.8 : 1;
+    slot.node.targetGlow = mode === 'preview' ? 2.6 : 1;
+    this.refreshPill(slot, optionId, mode);
   }
 
-  private connect(a: NodeCategory, b: NodeCategory): void {
-    const start = SLOTS[a].clone().setY(NODE_BASE_Y);
-    const end = SLOTS[b].clone().setY(NODE_BASE_Y);
-    const mid = start.clone().add(end).multiplyScalar(0.5);
-    mid.y += 2.2;
-
-    const curve = new THREE.CatmullRomCurve3([start, mid, end]);
-
-    const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 32, 0.05, 8, false),
-      new THREE.MeshBasicMaterial({ color: 0x10b981, wireframe: true, transparent: true, opacity: 0.4 })
+  private chainSlots(): Slot[] {
+    return COLUMN_ORDER.map(layer => this.slots.find(slot => slot.layer === layer)).filter(
+      (slot): slot is Slot => !!slot && !!slot.node
     );
-    this.cablesGroup.add(tube);
+  }
 
-    const pulse = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x6ee7b7 })
-    );
-    this.cablesGroup.add(pulse);
-
-    this.pulses.push({
-      mesh: pulse,
-      curve,
-      progress: Math.random(),
-      speed: 0.008 + Math.random() * 0.004
+  private rebuildLinks(chain: Slot[]): void {
+    this.linksGroup.children.slice().forEach(child => {
+      this.linksGroup.remove(child);
+      this.disposeObject(child);
     });
+
+    for (let i = 0; i < chain.length - 1; i++) {
+      const a = chain[i].position.clone().setY(NODE_BASE_Y);
+      const b = chain[i + 1].position.clone().setY(NODE_BASE_Y);
+      const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
+      this.linksGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.7 })));
+    }
+  }
+
+  /* ───────────── Piezas (modelos low-poly en piece-models.ts) ───────────── */
+
+  private createNode(slot: Slot, optionId: string): NodeEntry {
+    const option = OPTION_CATALOG[optionId];
+    const color = LAYERS.find(l => l.id === slot.layer)?.color ?? 0x34d399; // color por capa
+    const piece: PieceModel = buildPiece(modelKindFor(slot.key, optionId), color, option?.iconUrl);
+
+    piece.group.rotation.y = Math.PI / 4; // de frente a la cámara isométrica
+    const group = new THREE.Group();
+    group.add(piece.group);
+    group.position.set(slot.position.x, PIECE_Y + 4.5, slot.position.z); // cae desde arriba hasta su slot
+    group.scale.setScalar(0.0001);
+    this.nodesGroup.add(group);
+
+    return {
+      optionId,
+      group,
+      body: piece.group,
+      materials: piece.materials,
+      spawn: 0,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0,
+      targetOpacity: 1,
+      glow: 1,
+      targetGlow: 1
+    };
+  }
+
+  private removeNode(slot: Slot): void {
+    if (!slot.node) return;
+    this.nodesGroup.remove(slot.node.group);
+    this.disposeObject(slot.node.group);
+    slot.node = null;
+  }
+
+  private destroySlot(slot: Slot): void {
+    this.removeNode(slot);
+    this.padsGroup.remove(slot.pad);
+    this.disposeObject(slot.pad);
+    slot.pill.el.remove();
+  }
+
+  /* ───────────── Etiquetas (DOM sobre el canvas) ───────────── */
+
+  private createPill(layer: LayerId): PillRefs {
+    const el = document.createElement('div');
+    el.className = 'sb3d-pill';
+    el.style.setProperty('--layer', layerColor(layer));
+
+    const icon = document.createElement('img');
+    icon.className = 'sb3d-pill-icon';
+    icon.alt = '';
+    icon.width = 18;
+    icon.height = 18;
+    icon.addEventListener('error', () => (icon.style.display = 'none'));
+
+    const text = document.createElement('span');
+    text.className = 'sb3d-pill-text';
+    const name = document.createElement('strong');
+    const small = document.createElement('small');
+    text.append(name, small);
+
+    el.append(icon, text);
+    this.labelsHost().nativeElement.appendChild(el);
+    return { el, icon, name, layer: small, width: 120, key: '' };
+  }
+
+  private refreshPill(slot: Slot, optionId: string | null, mode: 'preview' | 'confirmed'): void {
+    const pill = slot.pill;
+    const key = `${optionId ?? ''}|${mode}`;
+    if (pill.key === key) return;
+    pill.key = key;
+
+    const layerName = LAYER_LABEL[slot.layer] ?? '';
+    const ghost = !optionId;
+    pill.el.classList.toggle('is-ghost', ghost);
+    pill.el.classList.toggle('is-preview', !ghost && mode === 'preview');
+    pill.layer.hidden = ghost;
+
+    if (ghost) {
+      pill.name.textContent = layerName; // slot vacío: solo el nombre de la capa
+      pill.icon.style.display = 'none';
+    } else if (slot.key === 'client') {
+      pill.name.textContent = 'Usuario';
+      pill.layer.textContent = 'Cliente';
+      pill.icon.style.display = 'none';
+    } else {
+      const option = OPTION_CATALOG[optionId];
+      pill.name.textContent = option?.name ?? optionId;
+      pill.layer.textContent = layerName;
+      if (option?.iconUrl) {
+        pill.icon.style.display = '';
+        pill.icon.src = option.iconUrl;
+      } else {
+        pill.icon.style.display = 'none';
+      }
+    }
+
+    pill.width = Math.ceil(pill.el.getBoundingClientRect().width);
+  }
+
+  /** Zona libre para etiquetas y encuadre: deja fuera el header y el panel del wizard. */
+  private insets(): { left: number; top: number; right: number; bottom: number } {
+    const wizardOnLeft = !this.built && this.width >= 900;
+    return { left: wizardOnLeft ? 568 : 24, top: 96, right: 24, bottom: 24 };
+  }
+
+  private updatePills(): void {
+    const ins = this.insets();
+    const items: { slot: Slot; x: number; y: number; w: number }[] = [];
+
+    for (const slot of this.slots) {
+      this.tmp.copy(slot.position).setY(PIECE_Y + 3.7).project(this.camera);
+      const x = (this.tmp.x * 0.5 + 0.5) * this.width;
+      const y = (-this.tmp.y * 0.5 + 0.5) * this.height;
+      const inside =
+        x > ins.left - 30 && x < this.width - ins.right + 30 && y > ins.top - 30 && y < this.height - ins.bottom + 30;
+
+      if (inside) {
+        items.push({ slot, x, y, w: slot.pill.width });
+      } else {
+        slot.pill.el.style.opacity = '0';
+      }
+    }
+
+    // Colisión: de arriba hacia abajo, cada etiqueta baja si choca con una ya colocada
+    items.sort((a, b) => a.y - b.y);
+    const placed: typeof items = [];
+    for (const item of items) {
+      for (const other of placed) {
+        const overlapX = Math.abs(item.x - other.x) < (item.w + other.w) / 2 + 6;
+        const overlapY = Math.abs(item.y - other.y) < PILL_H + 4;
+        if (overlapX && overlapY) item.y = other.y + PILL_H + 4;
+      }
+      placed.push(item);
+    }
+
+    for (const item of items) {
+      const x = clamp(item.x, ins.left + item.w / 2, this.width - ins.right - item.w / 2);
+      const y = clamp(item.y, ins.top + PILL_H / 2, this.height - ins.bottom - PILL_H / 2);
+      const el = item.slot.pill.el;
+      el.style.transform = `translate3d(${Math.round(x - item.w / 2)}px, ${Math.round(y - PILL_H / 2)}px, 0)`;
+      const node = item.slot.node;
+      el.style.opacity = node ? String(Math.min(1, node.opacity * 1.25)) : '0.85';
+    }
   }
 
   /* ───────────── Loop de animación ───────────── */
-
-  private onPointerMove = (e: PointerEvent): void => {
-    this.pointer.set((e.clientX / window.innerWidth) * 2 - 1, -((e.clientY / window.innerHeight) * 2 - 1));
-  };
 
   private onResize(): void {
     const el = this.host().nativeElement;
@@ -611,9 +644,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     this.camera.bottom = -FRUSTUM;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-
-    // recalcular el desplazamiento si cambió entre escritorio y móvil
-    this.applyState(this.viewState());
+    this.autoFit = true;
   }
 
   private animate = (): void => {
@@ -621,91 +652,87 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
     const t = performance.now();
 
     this.updateCamera();
-    this.updateOrb(t);
-    this.updateNodes(t);
+    this.updateSlots(t);
     this.updatePlatform();
-    this.updatePulses();
     this.updateParticles();
 
     this.renderer.render(this.scene, this.camera);
+    this.updatePills();
   };
 
+  /** Encuadra toda la caja de la cadena dentro de la zona libre, sin recortar. */
   private updateCamera(): void {
-    const k = 0.06;
+    if (this.autoFit && this.slots.length) {
+      const k = 0.08;
+      const ins = this.insets();
+      const freeW = Math.max(this.width - ins.left - ins.right, 120);
+      const freeH = Math.max(this.height - ins.top - ins.bottom, 120);
 
-    this.focus.lerp(this.targetFocus, k);
-    this.camera.zoom += (this.targetZoom - this.camera.zoom) * k;
-    this.viewShift.lerp(this.targetShift, k);
-    this.pointerSmooth.lerp(this.pointer, 0.05);
+      // Extensión de la caja en el espacio de la cámara (derecha / arriba)
+      this.camera.updateMatrixWorld();
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const x of [this.fitBox.min.x, this.fitBox.max.x]) {
+        for (const y of [this.fitBox.min.y, this.fitBox.max.y]) {
+          for (const z of [this.fitBox.min.z, this.fitBox.max.z]) {
+            this.tmp.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
+            minX = Math.min(minX, this.tmp.x);
+            maxX = Math.max(maxX, this.tmp.x);
+            minY = Math.min(minY, this.tmp.y);
+            maxY = Math.max(maxY, this.tmp.y);
+          }
+        }
+      }
 
-    // Parallax con el mouse: la cámara orbita un poco alrededor del foco
-    this.tmpOffset.copy(BASE_OFFSET).applyAxisAngle(Y_AXIS, this.pointerSmooth.x * 0.2);
-    this.tmpOffset.y += this.pointerSmooth.y * 2;
+      const aspect = this.width / this.height;
+      const zoomW = (2 * FRUSTUM * aspect * (freeW / this.width)) / (maxX - minX);
+      const zoomH = (2 * FRUSTUM * (freeH / this.height)) / (maxY - minY);
+      const zoom = clamp(Math.min(zoomW, zoomH) * 0.96, 0.3, 3);
 
-    this.camera.position.copy(this.focus).add(this.tmpOffset);
-    this.camera.lookAt(this.focus);
+      // El foco se mueve al centro de la caja; la cámara se traslada igual para no cambiar el ángulo
+      this.fitBox.getCenter(this.tmpCenter);
+      this.tmp.copy(this.tmpCenter).sub(this.controls.target).multiplyScalar(k);
+      this.controls.target.add(this.tmp);
+      this.camera.position.add(this.tmp);
 
-    // setViewOffset también actualiza la matriz de proyección (aplica zoom y desplazamiento)
-    this.camera.setViewOffset(
-      this.width,
-      this.height,
-      -this.viewShift.x * this.width,
-      this.viewShift.y * this.height,
-      this.width,
-      this.height
-    );
+      this.camera.zoom += (zoom - this.camera.zoom) * k;
+      this.shift.x += (ins.left + freeW / 2 - this.width / 2 - this.shift.x) * k;
+      this.shift.y += (ins.top + freeH / 2 - this.height / 2 - this.shift.y) * k;
+    }
+
+    this.controls.update();
+    this.camera.setViewOffset(this.width, this.height, -this.shift.x, -this.shift.y, this.width, this.height);
   }
 
-  private updateOrb(t: number): void {
-    const orb = this.orb;
-    orb.position.lerp(this.orbTargetPos, 0.08);
+  private updateSlots(t: number): void {
+    for (const slot of this.slots) {
+      const padTarget = slot.key === this.activeKey ? 0.5 : 0.18;
+      slot.padMat.opacity += (padTarget - slot.padMat.opacity) * 0.12;
 
-    this.orbScale += (this.orbTargetScale - this.orbScale) * 0.08;
-    const pulse = 1 + Math.sin(t * 0.003) * 0.02;
-    orb.scale.setScalar(Math.max(this.orbScale * pulse, 0.0001));
-    orb.visible = this.orbScale > 0.02;
+      const node = slot.node;
+      if (!node) continue;
 
-    this.orbColor.lerp(this.orbTargetColor, 0.1);
-    this.orbMats.forEach(m => m.color.copy(this.orbColor));
+      node.spawn = Math.min(1, node.spawn + 0.035);
+      node.group.scale.setScalar(Math.max(easeOutBack(node.spawn), 0.0001));
+      node.group.position.y = PIECE_Y + (1 - node.spawn) ** 2 * 4.5 + Math.sin(t * 0.002 + node.phase) * 0.06 * node.spawn;
+      node.body.rotation.y = Math.PI / 4 + Math.sin(t * 0.0008 + node.phase) * 0.2; // vaivén suave, sin dar la espalda
 
-    this.orbSphere.rotation.y += 0.004;
-    this.orbRingA.rotation.z += 0.012;
-    this.orbRingB.rotation.x += 0.009;
-  }
-
-  private updateNodes(t: number): void {
-    this.nodes.forEach(entry => {
-      entry.spawn = Math.min(1, entry.spawn + 0.04);
-      entry.group.scale.setScalar(Math.max(easeOutBack(entry.spawn), 0.0001));
-      entry.group.position.y = NODE_BASE_Y + Math.sin(t * 0.002 + entry.phase) * 0.1;
-      entry.body.rotation.y += 0.007;
-
-      entry.bodyMat.opacity += (entry.targetOpacity - entry.bodyMat.opacity) * 0.12;
-      entry.bodyMat.emissiveIntensity += (entry.targetEmissive - entry.bodyMat.emissiveIntensity) * 0.12;
-      if (entry.edgeMat) entry.edgeMat.opacity = entry.bodyMat.opacity;
-      entry.labelMat.opacity += (1 - entry.labelMat.opacity) * 0.12;
-    });
+      node.opacity += (node.targetOpacity - node.opacity) * 0.12;
+      node.glow += (node.targetGlow - node.glow) * 0.12;
+      for (const mat of node.materials) {
+        mat.opacity = node.opacity;
+        if (mat instanceof THREE.MeshStandardMaterial) {
+          mat.emissiveIntensity = ((mat.userData['base'] as number | undefined) ?? 0.1) * node.glow;
+        }
+      }
+    }
   }
 
   private updatePlatform(): void {
     this.platformSpawn = Math.min(1, this.platformSpawn + 0.035);
-    const eased = easeOutBack(this.platformSpawn);
-    this.platformGroup.scale.setScalar(0.92 + 0.08 * Math.min(eased, 1));
-
-    const factor = this.platformMode === 'preview' ? 0.6 : 1;
-    this.platformFades.forEach(f => {
-      const target = f.max * factor * this.platformSpawn;
-      f.mat.opacity += (target - f.mat.opacity) * 0.12;
-    });
-  }
-
-  private updatePulses(): void {
-    this.pulses.forEach(p => {
-      p.progress += p.speed;
-      if (p.progress > 1) p.progress = 0;
-      p.curve.getPoint(p.progress, this.tmpPoint);
-      p.mesh.position.copy(this.tmpPoint);
-    });
+    this.platformGroup.scale.setScalar(0.92 + 0.08 * Math.min(easeOutBack(this.platformSpawn), 1));
   }
 
   private updateParticles(): void {
@@ -729,10 +756,7 @@ export class IsometricCanvasComponent implements AfterViewInit, OnDestroy {
       item.geometry?.dispose();
 
       const materials = Array.isArray(item.material) ? item.material : item.material ? [item.material] : [];
-      materials.forEach(mat => {
-        (mat as THREE.SpriteMaterial).map?.dispose();
-        mat.dispose();
-      });
+      materials.forEach(mat => mat.dispose());
     });
   }
 }

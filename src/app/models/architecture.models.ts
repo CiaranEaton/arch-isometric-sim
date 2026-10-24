@@ -12,6 +12,7 @@ export type StepCategory =
   | 'database'
   | 'auth'
   | 'devops'
+  | 'domain'
   | 'cicd';
 
 export type ProjectTypeId = 'frontend' | 'backend' | 'fullstack-simple' | 'fullstack-enterprise';
@@ -125,6 +126,12 @@ export const STEP_DEFS: Record<StepCategory, StepDef> = {
     menuTitle: 'Deploy',
     title: 'Despliegue e infraestructura',
     subtitle: 'Dónde y cómo corre tu proyecto en producción.'
+  },
+  domain: {
+    layer: 'infra',
+    menuTitle: 'Dominio',
+    title: 'Dominio y DNS',
+    subtitle: 'Dónde registras el dominio y quién gestiona el DNS.'
   },
   cicd: {
     layer: 'infra',
@@ -318,7 +325,7 @@ const CATALOG_DATA: Record<string, Omit<StepOption, 'id'>> = {
 
   /* — Deploy — */
   vercel: {
-    name: 'Vercel / Netlify',
+    name: 'Vercel',
     description: 'Deploy desde Git con CDN global, previews por rama y funciones serverless.',
     tags: ['Edge CDN', 'Preview deploys', 'Serverless'],
     iconUrl: icon('vercel'),
@@ -328,7 +335,7 @@ const CATALOG_DATA: Record<string, Omit<StepOption, 'id'>> = {
     ]
   },
   static_pages: {
-    name: 'GitHub / Cloudflare Pages',
+    name: 'GitHub Pages',
     description: 'Hosting estático gratuito y simple para sitios sin lógica de servidor.',
     tags: ['Estático', 'CDN', 'Gratis'],
     iconUrl: icon('github'),
@@ -362,6 +369,93 @@ const CATALOG_DATA: Record<string, Omit<StepOption, 'id'>> = {
     affinities: [
       { when: { route: ['fullstack-enterprise'] }, score: 3, reason: 'Escala por servicio, con despliegues graduales y entornos aislados.' }
     ]
+  },
+
+  netlify: {
+    name: 'Netlify',
+    description: 'Deploy desde Git con previews por rama, formularios y funciones integradas.',
+    tags: ['Preview deploys', 'Forms', 'Functions'],
+    iconUrl: icon('netlify'),
+    affinities: [
+      { when: { route: ['frontend'] }, score: 2, reason: 'Alternativa directa a Vercel, con formularios y funciones ya integrados.' },
+      { when: { route: ['fullstack-simple'] }, score: 1, reason: 'Frontend con previews por rama y funciones para lógica ligera.' }
+    ]
+  },
+  cloudflare_pages: {
+    name: 'Cloudflare Pages / Workers',
+    description: 'Sitios estáticos y funciones en el edge de Cloudflare, con CDN global y un plan gratuito generoso.',
+    tags: ['Edge', 'Workers', 'CDN'],
+    iconUrl: icon('cloudflare'),
+    affinities: [
+      { when: { route: ['frontend'] }, score: 2, reason: 'CDN global y plan gratuito generoso; cómodo si también gestionas el DNS en Cloudflare.' },
+      { when: { route: ['fullstack-simple'] }, score: 1, reason: 'Frontend en el edge y lógica ligera en Workers, sin servidores que mantener.' }
+    ]
+  },
+  coolify: {
+    name: 'Coolify (autoalojado)',
+    description: 'PaaS de código abierto que instalas en tu propio VPS: despliega apps, bases de datos y servicios desde Git.',
+    tags: ['Self-hosted', 'Deploy desde Git', 'Docker'],
+    iconUrl: icon('docker'),
+    affinities: [
+      { when: { route: ['backend', 'fullstack-simple'] }, score: 1, reason: 'Un PaaS propio en un VPS: sin pagar por servicio y con deploy desde Git.' }
+    ]
+  },
+  hostinger_vps: {
+    name: 'Hostinger VPS',
+    description: 'Servidor virtual económico donde corres Docker o Coolify con control total.',
+    tags: ['VPS', 'Docker', 'Control total'],
+    iconUrl: icon('linux'),
+    affinities: [
+      { when: { route: ['backend', 'fullstack-simple'] }, score: 1, reason: 'VPS económico para correr tus contenedores con control total del servidor.' }
+    ]
+  },
+  aws_ecs: {
+    name: 'AWS ECS / Fargate',
+    description: 'Contenedores gestionados en AWS sin operar un clúster de Kubernetes.',
+    tags: ['AWS', 'Fargate', 'Contenedores'],
+    iconUrl: icon('amazonwebservices', 'original-wordmark'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 1, reason: 'Contenedores gestionados sin operar un clúster propio de Kubernetes.' },
+      { when: { auth: ['cognito'] }, score: 1, reason: 'Se integra con Cognito e IAM dentro del mismo ecosistema AWS.' }
+    ]
+  },
+
+  /* — Dominio y DNS — */
+  cloudflare_dns: {
+    name: 'Cloudflare (DNS y dominio)',
+    description: 'DNS rápido con SSL y protección básica contra DDoS; también permite registrar el dominio.',
+    tags: ['DNS', 'SSL', 'CDN'],
+    iconUrl: icon('cloudflare'),
+    affinities: [
+      { when: { route: ['frontend', 'backend', 'fullstack-simple'] }, score: 2, reason: 'DNS rápido, SSL y protección básica sin costo extra.' },
+      { when: { route: ['fullstack-enterprise'] }, score: 2, reason: 'DNS rápido y reglas de seguridad en el borde, delante de tu infraestructura.' },
+      { when: { devops: ['cloudflare_pages'] }, score: 3, reason: 'Ya usas Cloudflare: dominio, DNS y deploy en el mismo panel.' }
+    ]
+  },
+  hostinger_domains: {
+    name: 'Hostinger (dominio)',
+    description: 'Registro de dominio y DNS en el mismo proveedor que tu hosting o VPS.',
+    tags: ['Registro', 'DNS', 'Un solo proveedor'],
+    iconUrl: icon('linux'),
+    affinities: [
+      { when: { devops: ['hostinger_vps'] }, score: 3, reason: 'Dominio y VPS en el mismo proveedor: menos paneles que gestionar.' }
+    ]
+  },
+  route53: {
+    name: 'AWS Route 53',
+    description: 'DNS gestionado de AWS con health checks y enrutamiento por latencia o región.',
+    tags: ['AWS', 'DNS', 'Health checks'],
+    iconUrl: icon('amazonwebservices', 'original-wordmark'),
+    affinities: [
+      { when: { route: ['fullstack-enterprise'] }, score: 1, reason: 'DNS con health checks y failover si tu infraestructura vive en AWS.' },
+      { when: { devops: ['aws_ecs'] }, score: 2, reason: 'Se integra con ECS y el resto de tu infraestructura en AWS.' }
+    ]
+  },
+  registrar: {
+    name: 'Registrador (Namecheap / Porkbun)',
+    description: 'Registro de dominio independiente del hosting; apuntas el DNS donde prefieras.',
+    tags: ['Registro', 'Sin atarte al hosting', 'DNS externo'],
+    iconUrl: icon('namecheap')
   },
 
   /* — CI/CD — */
@@ -399,7 +493,8 @@ export const ROUTES: ProjectRoute[] = [
     steps: [
       { category: 'frontend', options: ['react', 'vue', 'angular'] },
       { category: 'styling', options: ['tailwind', 'component_lib', 'css_scss'] },
-      { category: 'devops', options: ['vercel', 'static_pages'] }
+      { category: 'devops', options: ['vercel', 'netlify', 'cloudflare_pages', 'static_pages'] },
+      { category: 'domain', options: ['cloudflare_dns', 'hostinger_domains', 'registrar'] }
     ]
   },
   {
@@ -412,7 +507,8 @@ export const ROUTES: ProjectRoute[] = [
       { category: 'backend', options: ['nestjs', 'express', 'fastapi'] },
       { category: 'database', options: ['postgres_managed', 'supabase_postgres', 'mongodb'] },
       { category: 'auth', options: ['jwt_custom', 'auth0', 'cognito', 'supabase_auth'] },
-      { category: 'devops', options: ['railway', 'docker_compose', 'docker_k8s'] }
+      { category: 'devops', options: ['railway', 'coolify', 'hostinger_vps', 'docker_compose', 'docker_k8s'] },
+      { category: 'domain', options: ['cloudflare_dns', 'route53', 'hostinger_domains', 'registrar'] }
     ]
   },
   {
@@ -426,7 +522,8 @@ export const ROUTES: ProjectRoute[] = [
       { category: 'backend', options: ['express', 'nestjs'] },
       { category: 'database', options: ['supabase_postgres', 'mongodb', 'postgres_managed'] },
       { category: 'auth', options: ['supabase_auth', 'auth0', 'jwt_custom'] },
-      { category: 'devops', options: ['vercel', 'railway'] }
+      { category: 'devops', options: ['vercel', 'railway', 'cloudflare_pages', 'coolify', 'hostinger_vps'] },
+      { category: 'domain', options: ['cloudflare_dns', 'hostinger_domains', 'registrar'] }
     ]
   },
   {
@@ -441,7 +538,8 @@ export const ROUTES: ProjectRoute[] = [
       { category: 'backend', options: ['nestjs', 'express', 'fastapi'] },
       { category: 'database', options: ['postgres_managed', 'supabase_postgres', 'mongodb'] },
       { category: 'auth', options: ['cognito', 'auth0', 'supabase_auth'] },
-      { category: 'devops', options: ['docker_k8s', 'docker_compose', 'railway'] },
+      { category: 'devops', options: ['docker_k8s', 'aws_ecs', 'docker_compose', 'coolify'] },
+      { category: 'domain', options: ['cloudflare_dns', 'route53', 'registrar'] },
       { category: 'cicd', options: ['github_actions', 'gitlab_ci'] }
     ]
   }
@@ -515,6 +613,15 @@ export const OPTION_VISUALS: Record<string, OptionVisual> = {
   railway: { color: 0xa855f7, shape: 'box', short: 'RAILWAY' },
   docker_compose: { color: 0x2496ed, shape: 'box', short: 'COMPOSE' },
   docker_k8s: { color: 0x2496ed, shape: 'box', short: 'DOCKER + K8S' },
+  netlify: { color: 0x00c7b7, shape: 'box', short: 'NETLIFY' },
+  cloudflare_pages: { color: 0xf38020, shape: 'box', short: 'CLOUDFLARE' },
+  coolify: { color: 0x8b5cf6, shape: 'box', short: 'COOLIFY' },
+  hostinger_vps: { color: 0x673de6, shape: 'box', short: 'HOSTINGER VPS' },
+  aws_ecs: { color: 0xff9900, shape: 'box', short: 'AWS ECS' },
+  cloudflare_dns: { color: 0xf38020, shape: 'octa', short: 'CLOUDFLARE DNS' },
+  hostinger_domains: { color: 0x673de6, shape: 'octa', short: 'HOSTINGER' },
+  route53: { color: 0x8c4fff, shape: 'octa', short: 'ROUTE 53' },
+  registrar: { color: 0x94a3b8, shape: 'octa', short: 'DOMINIO' },
   github_actions: { color: 0x2088ff, shape: 'box', short: 'ACTIONS' },
   gitlab_ci: { color: 0xfc6d26, shape: 'box', short: 'GITLAB CI' }
 };
